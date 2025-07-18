@@ -1,0 +1,16 @@
+scikit-learn
+torch 
+torchvision 
+torchaudio 
+numpy 
+matplotlib 
+tqdm 
+Pillow 
+safetensors 
+transformers
+dataclasses
+datasets
+torchcodec
+soundfile
+seaborn
+# apt-get update && apt-get install -y ffmpeg
