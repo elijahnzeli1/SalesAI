@@ -29,12 +29,63 @@ tags:
 - art
 ---
 
-# SalesA AI: Multimodal Financial & Generalist Model
+## **Model Name with Parameters**
 
-**Author:** SalesA Team  
-**License:** MIT  
-**Language:** English  
-**Tags:** multimodal, finance, text, vision, audio, code, ethical, robotics
+**SalesA AI 125M — Multimodal Mixture-of-Experts Transformer**
+
+- **Full Name Example:**  
+  `SalesA AI 125M (MoE, Multimodal, N.E.N & SalesA Team)`
+
+- **Breakdown:**
+  - **SalesA AI**: Your model’s brand/architecture.
+  - **125M**: Number of parameters (from your logs: `Total parameters: 125,106,858` ≈ 125M).
+  - **MoE**: Mixture-of-Experts.
+  - **Multimodal**: Handles text, vision, audio, code, action.
+  - **Author**: N.E.N (Nthuku Elijah Nzeli) and SalesA Team.
+
+---
+
+  **Created by N.E.N (Nthuku Elijah Nzeli) and SalesA Team**
+
+  - Model architecture: `SalesAModel`
+  - Library: Custom (see included code)
+  - Parameters: 125M
+  - Modalities: Text, Vision, Audio, Code, Action/Robotics
+  - MoE: Yes
+
+  This repository contains the SalesA AI model, a modular, extensible, and efficient multimodal transformer with Mixture-of-Experts (MoE) layers.
+  ```
+
+---
+
+## **Why This Naming Convention?**
+
+- **Clarity:** Users immediately know the model’s size and capabilities.
+- **Discoverability:** Easy to search/filter on Hugging Face and other platforms.
+- **Professionalism:** Follows conventions used by top models (e.g., “Qwen2.5-7B-Minivoc-32k” [source](https://huggingface.co/kaitchup/Qwen2.5-7B-Minivoc-32k-v0.1a), “distilbert-base-uncased” [source](https://huggingface.co/distilbert-base-uncased)).
+
+---
+
+## **Summary Table**
+
+| Field         | Value                                      |
+|---------------|--------------------------------------------|
+| Model Name    | SalesA AI 125M                             |
+| Architecture  | Multimodal Mixture-of-Experts Transformer  |
+| Parameters    | 125M                                       |
+| Author        | N.E.N (Nthuku Elijah Nzeli) and SalesA Team|
+
+---
+
+> **SalesA AI 125M — Multimodal Mixture-of-Experts Transformer**  
+> **Created by N.E.N (Nthuku Elijah Nzeli) and SalesA Team**
+
+
+This repository contains the SalesA AI model, a modular, extensible, and efficient multimodal transformer with Mixture-of-Experts (MoE) layers. It supports text, vision, audio, code, and action/robotics tasks.
+
+- Model architecture: `SalesAModel`
+- Library: Custom (see included code)
+- Author: N.E.N (Nthuku Elijah Nzeli) and SalesA Team
 
 ## Model Description
 
