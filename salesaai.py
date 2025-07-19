@@ -38,6 +38,7 @@ warnings.filterwarnings('ignore')
 from safetensors.torch import save_file # Import save_file
 import seaborn as sns
 from sklearn.metrics import confusion_matrix, classification_report
+import tiktoken  # Add this import at the top
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -81,6 +82,9 @@ class SalesAConfig:
     max_text_length: int = 1024
     max_audio_length: int = 16000  # 1 second at 16kHz
     action_dim: int = 10  # Number of possible actions for robotics
+
+    model_name: str = "SalesA AI"
+    model_author: str = "Created by N.E.N (Nthuku Elijah Nzeli) and SalesA Team"
 
     def __post_init__(self):
         """Validate configuration"""
@@ -416,6 +420,8 @@ class SalesAModel(nn.Module):
     def __init__(self, config: SalesAConfig):
         super().__init__()
         self.config = config
+        self.model_name = config.model_name
+        self.model_author = config.model_author
 
         # Multimodal encoders
         self.text_encoder = TextEncoder(config)
@@ -579,120 +585,94 @@ class SalesAModel(nn.Module):
 
         return generated
 
+    def get_name(self):
+        return self.model_name
+
+    def get_author(self):
+        return self.model_author
+
 """# 6. DATASET CLASSES"""
 
+# --- Define extra domain-specific tokens ---
+EXTRA_TOKENS = [
+    "<STOCK>", "<FINANCE>", "<MARKET>", "<SALES>", "<EARNINGS>", "<REVENUE>", "<PRICE>", "<VOLUME>",
+    "<ACTION>", "<AUDIO>", "<VISION>", "<TTS>", "<ROBOT>", "<INSTRUCTION>", "<RESPONSE>", "<USER>", "<ASSISTANT>"
+]
+
 class SalesATokenizer:
-    """Simple tokenizer for SalesA AI"""
-    def __init__(self, vocab_size: int = 32000):
+    """Tokenizer for SalesA AI using Tiktoken and extra domain tokens"""
+    def __init__(self, vocab_size: int = 32000, vocab: Optional[list] = None, enc=None, model_name: str = "gpt2"):
         self.vocab_size = vocab_size
-        self.vocab = self._create_vocab()
+        if enc is not None:
+            self.enc = enc
+        else:
+            self.enc = tiktoken.get_encoding(model_name)
+        if vocab is not None:
+            self.vocab = vocab[:vocab_size]
+        else:
+            self.vocab = list(self.enc._mergeable_ranks.keys())[:vocab_size]
         self.token_to_id = {token: i for i, token in enumerate(self.vocab)}
         self.id_to_token = {i: token for i, token in enumerate(self.vocab)}
-
         # Special tokens
-        self.pad_token = "<PAD>"
-        self.unk_token = "<UNK>"
-        self.bos_token = "<BOS>"
-        self.eos_token = "<EOS>"
-        self.code_token = "<CODE>"
-
-        self.pad_token_id = self.token_to_id[self.pad_token]
-        self.unk_token_id = self.token_to_id[self.unk_token]
-        self.bos_token_id = self.token_to_id[self.bos_token]
-        self.eos_token_id = self.token_to_id[self.eos_token]
-        self.code_token_id = self.token_to_id[self.code_token]
-
-    def _create_vocab(self) -> List[str]:
-        """Create a simple vocabulary"""
-        # Special tokens
-        special_tokens = ["<PAD>", "<UNK>", "<BOS>", "<EOS>", "<CODE>"]
-
-        # Common words and characters
-        common_words = [
-            # Top 200+ most common English words (expand as needed)
-            "the", "be", "to", "of", "and", "a", "in", "that", "have", "I", "it", "for", "not", "on", "with", "he", "as", "you", "do", "at",
-            "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", "my", "one", "all", "would", "there", "their", "what",
-            "so", "up", "out", "if", "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no", "just", "him", "know", "take",
-            "people", "into", "year", "your", "good", "some", "could", "them", "see", "other", "than", "then", "now", "look", "only", "come", "its", "over",
-            "think", "also", "back", "after", "use", "two", "how", "our", "work", "first", "well", "way", "even", "new", "want", "because", "any", "these",
-            "give", "day", "most", "us", "is", "are", "was", "were", "has", "had", "did", "been", "being", "may", "might", "must", "shall", "should", "can",
-            "would", "could", "does", "each", "every", "few", "many", "much", "more", "less", "lot", "lots", "very", "too", "quite", "rather", "just", "still",
-            "always", "never", "sometimes", "often", "usually", "again", "already", "yet", "soon", "late", "early", "before", "after", "since", "until", "while",
-            "during", "where", "when", "why", "how", "whose", "whom", "which", "what", "who", "whenever", "wherever", "however", "whatever", "whichever",
-            "because", "although", "though", "unless", "if", "whether", "while", "whereas", "besides", "despite", "in", "on", "at", "by", "with", "about",
-            "against", "between", "among", "through", "during", "without", "within", "along", "across", "behind", "beyond", "under", "above", "below",
-            "near", "far", "inside", "outside", "toward", "onto", "off", "from", "since", "for", "to", "of", "as", "per", "via", "according", "regarding",
-            "concerning", "including", "excluding", "plus", "minus", "versus", "amid", "amongst", "upon", "throughout", "despite", "except", "beside",
-            "alongside", "around", "down", "up", "out", "over", "past", "across", "into", "onto", "off", "upon", "beyond", "within", "without", "amongst",
-            # Add more as needed for coverage
-        ]
-
-        # Programming keywords
-        code_words = [
-            # Python keywords
-            "def", "class", "if", "else", "elif", "for", "while", "import", "from", "return", "print", "input", "len", "range", "str", "int", "float", "list", "dict", "tuple", "set", "try", "except", "finally", "with", "as", "lambda", "yield", "pass", "break", "continue", "global", "nonlocal", "assert", "del", "raise", "async", "await",
-            # JavaScript keywords
-            "function", "var", "let", "const", "if", "else", "switch", "case", "break", "continue", "for", "while", "do", "return", "try", "catch", "finally", "throw", "class", "extends", "constructor", "super", "import", "export", "default", "new", "this", "typeof", "instanceof", "in", "of", "delete", "void", "yield", "await", "static", "get", "set",
-            # Java keywords
-            "public", "private", "protected", "static", "final", "void", "int", "float", "double", "char", "boolean", "byte", "short", "long", "new", "class", "interface", "extends", "implements", "package", "import", "return", "if", "else", "switch", "case", "default", "break", "continue", "for", "while", "do", "try", "catch", "finally", "throw", "throws", "this", "super", "synchronized", "volatile", "transient", "abstract", "native", "strictfp", "enum", "assert",
-            # C/C++ keywords
-            "int", "float", "double", "char", "void", "short", "long", "signed", "unsigned", "const", "static", "extern", "auto", "register", "volatile", "struct", "union", "enum", "typedef", "sizeof", "if", "else", "switch", "case", "default", "break", "continue", "for", "while", "do", "goto", "return", "main", "include", "define", "ifdef", "ifndef", "endif", "pragma", "class", "public", "private", "protected", "virtual", "template", "typename", "namespace", "using", "try", "catch", "throw", "new", "delete", "this", "operator", "friend", "inline", "explicit", "mutable", "static_cast", "dynamic_cast", "reinterpret_cast", "const_cast", "typeid", "nullptr",
-            # SQL keywords
-            "select", "from", "where", "insert", "update", "delete", "create", "drop", "alter", "table", "database", "index", "view", "trigger", "procedure", "function", "into", "values", "set", "join", "on", "as", "and", "or", "not", "null", "is", "in", "like", "between", "group", "by", "order", "having", "distinct", "union", "all", "limit", "offset", "case", "when", "then", "else", "end",
-            # Bash/shell keywords
-            "echo", "cd", "ls", "pwd", "cat", "grep", "awk", "sed", "export", "unset", "source", "alias", "function", "if", "then", "else", "elif", "fi", "for", "while", "do", "done", "case", "esac", "break", "continue", "return", "exit", "trap", "shift", "read", "test", "true", "false", "exec", "set", "unset", "declare", "typeset", "let", "eval", "select", "time", "wait", "kill", "jobs", "bg", "fg", "disown",
-            # Add more as needed for coverage
-        ]
-
-        # Financial/market tokens
-        financial_tokens = ["<STOCK>", "<FINANCE>", "<MARKET>", "<SALES>", "<EARNINGS>", "<REVENUE>", "<PRICE>", "<VOLUME>"]
-
-        # Characters and punctuation
-        chars = [chr(i) for i in range(ord('a'), ord('z') + 1)]
-        chars += [chr(i) for i in range(ord('A'), ord('Z') + 1)]
-        chars += [chr(i) for i in range(ord('0'), ord('9') + 1)]
-        chars += [' ', '.', ',', '!', '?', ';', ':', '(', ')', '[', ']', '{', '}']
-
-        # Combine all tokens
-        vocab = special_tokens + common_words + code_words + financial_tokens + chars
-
-        # Pad to vocab_size with dummy tokens
-        while len(vocab) < self.vocab_size:
-            vocab.append(f"<DUMMY_{len(vocab)}>")
-
-        return vocab[:self.vocab_size]
-
-    def encode(self, text: str) -> List[int]:
-        """Encode text to token IDs"""
-        tokens = self._tokenize(text)
-        return [self.token_to_id.get(token, self.unk_token_id) for token in tokens]
-
-    def decode(self, token_ids: List[int]) -> str:
-        """Decode token IDs to text"""
-        tokens = [self.id_to_token.get(id, self.unk_token) for id in token_ids]
-        return ''.join(tokens).replace(self.pad_token, '').replace(self.unk_token, '')
-
-    def _tokenize(self, text: str) -> List[str]:
-        """Simple tokenization (character-level with word boundaries)"""
+        self.pad_token = "<|pad|>"
+        self.unk_token = "<|unk|>"
+        self.bos_token = "<|startoftext|>"
+        self.eos_token = "<|endoftext|>"
+        self.code_token = "<|code|>"
+        # Add extra tokens to token_to_id if not present
+        for token in EXTRA_TOKENS:
+            token_bytes = token.encode("utf-8") if isinstance(token, str) else token
+            if token_bytes not in self.token_to_id:
+                idx = len(self.token_to_id)
+                self.token_to_id[token_bytes] = idx
+                self.id_to_token[idx] = token_bytes
+        # Set special token IDs safely
+        try:
+            self.pad_token_id = self.enc.encode(self.pad_token)[0]
+        except Exception:
+            self.pad_token_id = 0
+        try:
+            self.unk_token_id = self.enc.encode(self.unk_token)[0]
+        except Exception:
+            self.unk_token_id = 1
+        try:
+            self.bos_token_id = self.enc.encode(self.bos_token)[0]
+        except Exception:
+            self.bos_token_id = 2
+        try:
+            self.eos_token_id = self.enc.encode(self.eos_token)[0]
+        except Exception:
+            self.eos_token_id = 3
+        try:
+            self.code_token_id = self.enc.encode(self.code_token)[0]
+        except Exception:
+            self.code_token_id = 4
+        # Add extra token IDs
+        for token in EXTRA_TOKENS:
+            token_bytes = token.encode("utf-8") if isinstance(token, str) else token
+            setattr(self, f"{token.strip('<>').lower()}_id", self.token_to_id[token_bytes])
+    def encode(self, text: str) -> list:
+        # Use Tiktoken for base encoding, but map extra tokens to their IDs
         tokens = []
-        current_word = ""
-
-        for char in text:
-            if char.isalnum():
-                current_word += char
+        for word in text.split():
+            word_bytes = word.encode("utf-8")
+            if word_bytes in self.token_to_id:
+                tokens.append(self.token_to_id[word_bytes])
             else:
-                if current_word:
-                    tokens.append(current_word)
-                    current_word = ""
-                if char.strip():  # Non-whitespace punctuation
-                    tokens.append(char)
-
-        if current_word:
-            tokens.append(current_word)
-
+                tokens.extend(self.enc.encode(word))
         return tokens
-
-"""# 7. TOKENIZER (SIMPLIFIED)"""
+    def decode(self, token_ids: list) -> str:
+        # Map extra token IDs back to their string, otherwise use Tiktoken
+        words = []
+        for tid in token_ids:
+            if tid in self.id_to_token and self.id_to_token[tid].decode("utf-8") in EXTRA_TOKENS:
+                words.append(self.id_to_token[tid].decode("utf-8"))
+            else:
+                try:
+                    words.append(self.enc.decode([tid]))
+                except Exception:
+                    words.append("<UNK>")
+        return " ".join(words)
 
 from torch.utils.data import Dataset, DataLoader
 import torch
@@ -713,12 +693,13 @@ logger = logging.getLogger(__name__)
 class MultimodalDataset(Dataset):
     """Dataset for multimodal training with real datasets and action support"""
 
-    def __init__(self, config, tokenizer: SalesATokenizer, split: str = "train", dataset_name: Union[str, List[str]] = "auto"):
+    def __init__(self, config, tokenizer: SalesATokenizer, split: str = "train", dataset_name: Union[str, List[str]] = "auto", task_type: Optional[str] = None):
         self.config = config
         self.tokenizer = tokenizer
         self.split = split
         self.dataset_name = dataset_name
-        self.data = self._load_data()
+        self.task_type = task_type
+        self.data = self._load_data()   
 
     def _load_data(self) -> List[Dict]:
         """Load and prepare multimodal data from real datasets"""
@@ -812,12 +793,48 @@ class MultimodalDataset(Dataset):
                 "labels_key": "label",
                 "limit": 5000 if self.split == "train" else 1000
             },
+            # Code generation/understanding datasets
+            "humaneval": {
+                "name": "code-rag-bench/humaneval",
+                "config": None,
+                "has_image": False,
+                "has_text": True,
+                "has_audio": False,
+                "text_key": "prompt",  # Humaneval uses 'prompt' for code tasks
+                "labels_key": "canonical_solution",  # Ground truth code
+                "limit": 1000 if self.split == "train" else 200
+            },
+            "ds1000": {
+                "name": "code-rag-bench/ds1000",
+                "config": None,
+                "has_image": False,
+                "has_text": True,
+                "has_audio": False,
+                "text_key": "prompt",  # DS1000 uses 'prompt' for code tasks
+                "labels_key": "solution",  # Ground truth code
+                "limit": 1000 if self.split == "train" else 200
+            },
         }
 
-        # Select dataset(s) to load
+        # --- Enhanced automatic selection logic ---
         if self.dataset_name == "auto":
-            # Use financial_phrasebank as default for financial/stock tasks
-            selected_datasets = ["financial_phrasebank"]
+            # Select default dataset(s) based on task_type
+            if hasattr(self, 'task_type') and self.task_type:
+                if self.task_type in ["code", "code-generation"]:
+                    selected_datasets = ["humaneval", "ds1000"]
+                elif self.task_type == "vision":
+                    selected_datasets = ["beans"]
+                elif self.task_type == "audio":
+                    selected_datasets = ["clotho"]
+                elif self.task_type in ["financial", "stock"]:
+                    selected_datasets = ["financial_phrasebank"]
+                elif self.task_type == "text":
+                    selected_datasets = ["prosocial_dialog"]
+                else:
+                    selected_datasets = ["logic_reasoning"]
+            else:
+                # Fallback to general text dataset
+                selected_datasets = ["open_platypus"]
         elif self.dataset_name == "all":
             selected_datasets = list(dataset_configs.keys())
         elif isinstance(self.dataset_name, list):
@@ -1339,7 +1356,9 @@ AVAILABLE_DATASETS = {
     "clotho_aqa": "Audio + Q&A (~2k samples)",
     "luma": "Image + Audio + Text (~50 classes multimodal)",
     "logic_reasoning": "Text-only reasoning multi-turn conversations with prosocial responses (58K dialogues)",
-    "open_platypus": "Text-only instruction following dataset" # Added Open-Platypus description
+    "open_platypus": "Text-only instruction following dataset", # Added Open-Platypus description
+    "humaneval": "Code generation/understanding: HumanEval benchmark (code prompts and solutions)",
+    "ds1000": "Code generation/understanding: DS-1000 benchmark (code prompts and solutions)",
 }
 
 
@@ -1596,16 +1615,16 @@ class SalesATrainer:
                 expert_usage[f"layer_{i}"] = block.moe.expert_usage.clone()  # type: ignore
             self.expert_usage_history.append(expert_usage)
 
-            # Plot training progress
+            # Plot training progress and save to disk
             if (epoch + 1) % 1 == 0: # Plot every epoch for better monitoring
-                self.plot_training_progress()
+                self.plot_training_progress(save_dir="./SalesA")
 
         logger.info("Training finished.")
         # After training, plot and save bias/diagnostic visualizations
         self.plot_bias_and_diagnostics(val_loader, save_dir="./SalesA")
 
-    def plot_training_progress(self):
-        """Plot training and validation losses, gradient norms, and expert usage"""
+    def plot_training_progress(self, save_dir: str = "./SalesA"):
+        """Plot training and validation losses, gradient norms, and expert usage, and save to disk."""
         num_plots = 3 if self.expert_usage_history and self.gradient_norm_history else (2 if self.gradient_norm_history else (1 if self.expert_usage_history else 1))
         fig, axes = plt.subplots(1, num_plots, figsize=(6 * num_plots, 4))
         axes = axes.flatten() # Ensure axes is iterable even for a single subplot
@@ -1645,9 +1664,11 @@ class SalesATrainer:
                 axes[plot_idx].grid(True)
                 plot_idx += 1
 
-
         plt.tight_layout()
-        plt.show()
+        # Always save the plot
+        os.makedirs(save_dir, exist_ok=True)
+        plt.savefig(os.path.join(save_dir, f"training_progress_epoch_{len(self.train_losses)}.png"))
+        plt.close()
 
     def save_model(self, folder_path: str = "./SalesA"):
         """Save the trained model and associated files for deployment."""
@@ -1678,57 +1699,47 @@ class SalesATrainer:
             pickle.dump(history_data, f)
         logger.info(f"Training history saved to {history_path}")
 
-        # Placeholder for saving tokenizer vocabulary
+        # Save Tiktoken vocab with author info
         tokenizer_vocab_path = os.path.join(folder_path, "vocab.json")
         try:
+            vocab_data = {
+                "model_author": self.model.get_author(),
+                "vocab_size": self.model.text_encoder.embedding.weight.shape[0]
+            }
             with open(tokenizer_vocab_path, "w") as f:
-                json.dump(SalesATokenizer(self.config.vocab_size).vocab, f, indent=4)
+                json.dump(vocab_data, f, indent=4)
             logger.info(f"Tokenizer vocabulary saved to {tokenizer_vocab_path}")
         except Exception as e:
             logger.error(f"Could not save tokenizer vocabulary: {e}")
-
-        # --- Additional required files ---
-        # 1. merge.txt (for tokenizer merges, placeholder if not used)
-        merge_path = os.path.join(folder_path, "merge.txt")
-        with open(merge_path, "w") as f:
-            f.write("# Placeholder for tokenizer merges (if using BPE or similar)\n")
-        logger.info(f"merge.txt saved to {merge_path}")
-
-        # 2. README.md
+        # Save model architecture summary
+        model_summary_path = os.path.join(folder_path, "model_summary.txt")
+        with open(model_summary_path, "w") as f:
+            f.write(f"Model Name: {self.model.get_name()}\n")
+            f.write(f"Author: {self.model.get_author()}\n\n")
+            f.write(str(self.model))
+        logger.info(f"Model summary saved to {model_summary_path}")
+        # Only generate merge.txt and tokenizer.model if using subword tokenizer
+        # (Assume not used here, so skip or document in README)
         readme_path = os.path.join(folder_path, "README.md")
-        with open(readme_path, "w") as f:
-            f.write("""# SalesA AI Model\n\nThis directory contains the SalesA AI multimodal model, tokenizer, and all associated files for deployment and inference.\n\n- Model weights: model.safetensors\n- Config: config.json\n- Tokenizer: tokenizer.json, vocab.json, tokenizer.model\n- Generation config: generation_config.json\n- Merge file: merge.txt\n- Index: model.safetensors.index.json\n- Chat template: chat_template.jinja\n\nFor more details, see the documentation.\n""")
-        logger.info(f"README.md saved to {readme_path}")
-
-        # 3. chat_template.jinja (template for chat UIs, placeholder)
+        with open(readme_path, "a") as f:
+            f.write(f"\nCreated by: {self.model.get_author()}\n")
+            f.write("\nNote: merge.txt and tokenizer.model are not generated as this model uses a Tiktoken-based tokenizer.\n")
+        # Improve chat_template.jinja
         chat_template_path = os.path.join(folder_path, "chat_template.jinja")
         with open(chat_template_path, "w") as f:
-            f.write("""{# Jinja2 template for chat formatting #}\n{{ user }}: {{ message }}\n""")
+            f.write("""{# Jinja2 template for chat formatting #}\n{{ user }}: {{ message }}\n---\n{{ assistant }}: {{ response }}\n""")
         logger.info(f"chat_template.jinja saved to {chat_template_path}")
 
-        # 4. generation_config.json (default generation parameters)
-        generation_config_path = os.path.join(folder_path, "generation_config.json")
-        generation_config = {
-            "max_length": 128,
-            "temperature": 0.7,
-            "top_k": 50,
-            "do_sample": True
+        # Save tokenizer.json with author info
+        tokenizer_json = {
+            "vocab": self.model.text_encoder.embedding.weight.shape[0],
+            "model_author": self.model.get_author(),
+            "pad_token": self.model.config.model_name if hasattr(self.model.config, 'model_name') else None
         }
-        with open(generation_config_path, "w") as f:
-            json.dump(generation_config, f, indent=2)
-        logger.info(f"generation_config.json saved to {generation_config_path}")
-
-        # 5. model.safetensors.index.json (index file for sharded weights, placeholder)
-        index_path = os.path.join(folder_path, "model.safetensors.index.json")
-        with open(index_path, "w") as f:
-            json.dump({"weight_map": {"model.safetensors": []}}, f, indent=2)
-        logger.info(f"model.safetensors.index.json saved to {index_path}")
-
-        # 6. tokenizer.model (placeholder for SentencePiece or similar)
-        tokenizer_model_path = os.path.join(folder_path, "tokenizer.model")
-        with open(tokenizer_model_path, "wb") as f:
-            f.write(b"# Placeholder for tokenizer.model (e.g., SentencePiece)")
-        logger.info(f"tokenizer.model saved to {tokenizer_model_path}")
+        tokenizer_path = os.path.join(folder_path, "tokenizer.json")
+        with open(tokenizer_path, "w") as f:
+            json.dump(tokenizer_json, f, indent=2)
+        logger.info(f"Tokenizer config saved to {tokenizer_path}")
 
         logger.info("Model and associated files saved successfully for deployment.")
 
@@ -1770,6 +1781,7 @@ class SalesATrainer:
             plt.title("Confusion Matrix")
             plt.xlabel("Predicted")
             plt.ylabel("True")
+            os.makedirs(save_dir, exist_ok=True)
             plt.savefig(os.path.join(save_dir, "confusion_matrix.png"))
             plt.close()
 
@@ -1940,26 +1952,25 @@ class SalesAEvaluator:
 def main():
     """Main execution function for SalesA AI"""
     print("=" * 80)
-    print("SalesA AI - Complete Implementation")
-    print("Created by: SalesA Team")
-    print("=" * 80)
-
-    # Configuration
+    # Use model name and author from config
     config = SalesAConfig(
-        vocab_size=32000,  # Smaller for demo
-        hidden_dim=512,   # Smaller for CPU
-        num_layers=8,     # Smaller for CPU
+        vocab_size=32000,
+        hidden_dim=512,
+        num_layers=8,
         num_heads=8,
-        num_experts=4,    # Smaller for CPU
-        batch_size=4,     # Smaller for CPU
-        max_seq_len=512   # Smaller for CPU
+        num_experts=4,
+        batch_size=4,
     )
-
-    print(f"Configuration: {config}")
+    print(f"{config.model_name} - Complete Implementation")
+    print(f"{config.model_author}")
+    print("=" * 80)
 
     # Initialize components
     print("\n1. Initializing SalesA AI components...")
-    tokenizer = SalesATokenizer(vocab_size=config.vocab_size)
+    # Load raw training data for vocab building
+    raw_train_dataset = MultimodalDataset(config, SalesATokenizer(vocab_size=config.vocab_size), split="train")
+    vocab, enc = build_vocab_with_tiktoken(raw_train_dataset.data, vocab_size=config.vocab_size, model_name="gpt2")
+    tokenizer = SalesATokenizer(vocab_size=config.vocab_size, vocab=vocab, enc=enc)
     trainer = SalesATrainer(config)
     evaluator = SalesAEvaluator(trainer.model, tokenizer)
 
@@ -1971,7 +1982,7 @@ def main():
 
     # Create datasets
     print("\n2. Creating datasets...")
-    # Pass the tokenizer to the dataset
+    # Now create datasets with the real tokenizer
     train_dataset = MultimodalDataset(config, tokenizer, split="train")
     val_dataset = MultimodalDataset(config, tokenizer, split="val")
 
@@ -2114,7 +2125,8 @@ def export_for_deployment(model: SalesAModel, config: SalesAConfig, tokenizer: S
         "unk_token_id": tokenizer.unk_token_id,
         "bos_token_id": tokenizer.bos_token_id,
         "eos_token_id": tokenizer.eos_token_id,
-        "code_token_id": tokenizer.code_token_id
+        "code_token_id": tokenizer.code_token_id,
+        "model_author": config.model_author
     }
     tokenizer_path = os.path.join(export_dir, "tokenizer.json")
     with open(tokenizer_path, "w") as f:
@@ -2142,6 +2154,7 @@ def export_for_deployment(model: SalesAModel, config: SalesAConfig, tokenizer: S
     # 2. README.md
     readme_path = os.path.join(export_dir, "README.md")
     with open(readme_path, "w") as f:
+        f.write(f"Created by: {config.model_author}\n\n")
         f.write("""# SalesA AI Model\n\nThis directory contains the SalesA AI multimodal model, tokenizer, and all associated files for deployment and inference.\n\n- Model weights: model.safetensors\n- Config: config.json\n- Tokenizer: tokenizer.json, vocab.json, tokenizer.model\n- Generation config: generation_config.json\n- Merge file: merge.txt\n- Index: model.safetensors.index.json\n- Chat template: chat_template.jinja\n\nFor more details, see the documentation.\n""")
     # 3. chat_template.jinja (template for chat UIs, placeholder)
     chat_template_path = os.path.join(export_dir, "chat_template.jinja")
@@ -2171,3 +2184,25 @@ def export_for_deployment(model: SalesAModel, config: SalesAConfig, tokenizer: S
 
 if __name__ == "__main__":
     main()  # Call the original main function for standard environment
+
+# --- NEW: Utility to build vocab from training data using Tiktoken ---
+def build_vocab_with_tiktoken(dataset, vocab_size=32000, model_name="gpt2"):
+    # Use Tiktoken's BPE model (e.g., gpt2) to build vocab from data
+    enc = tiktoken.get_encoding(model_name)
+    counter = {}
+    for sample in dataset:
+        text = sample.get("text")
+        if text is not None:
+            if isinstance(text, torch.Tensor):
+                text_str = " ".join([str(t.item()) for t in text])
+            elif isinstance(text, str):
+                text_str = text
+            else:
+                continue
+            tokens = enc.encode(text_str)
+            for token in tokens:
+                counter[token] = counter.get(token, 0) + 1
+    # Get most common tokens up to vocab_size minus extra tokens
+    most_common = sorted(counter.items(), key=lambda x: -x[1])[:max(0, vocab_size - len(EXTRA_TOKENS))]
+    vocab = EXTRA_TOKENS + [token for token, _ in most_common]
+    return vocab[:vocab_size], enc
