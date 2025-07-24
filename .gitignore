@@ -4,4 +4,6 @@
 
 *.env
 
+datasets/
+
 training_logs.md

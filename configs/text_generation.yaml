@@ -1,0 +1,19 @@
+# Text generation configuration
+extends: base.yaml
+
+model:
+  name: "SalesA AI - Text Generation"
+  num_layers: 12  # More layers for better language modeling
+  hidden_dim: 768  # Larger hidden dimension
+  num_experts: 8  # More experts for language diversity
+
+training:
+  batch_size: 8
+  learning_rate: 5.0e-5  # Lower learning rate for stability
+  num_epochs: 20
+  gradient_accumulation_steps: 2  # Effective batch size of 16
+
+data:
+  dataset_name: ["open_platypus", "prosocial_dialog"]  # Multiple text datasets
+  task_type: "text"
+  max_text_length: 2048  # Longer sequences for text generation 

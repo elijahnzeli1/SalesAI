@@ -1,0 +1,44 @@
+# Reinforcement learning configuration
+extends: base.yaml
+
+model:
+  name: "SalesA AI - RL Agent"
+  num_layers: 8  # Shallower for faster inference
+  hidden_dim: 512
+  num_experts: 4  # Fewer experts for RL stability
+
+training:
+  batch_size: 16  # Larger batch for RL
+  learning_rate: 3.0e-4  # Higher learning rate for RL
+  num_epochs: 5  # Shorter epochs, more episodes
+  gradient_accumulation_steps: 1
+
+data:
+  dataset_name: "open_platypus"  # Base text dataset for pre-training
+  task_type: "text"
+  max_text_length: 512  # Shorter sequences for RL
+
+rl:
+  # Enhanced RL parameters
+  num_episodes: 1000
+  buffer_capacity: 10000
+  memory_capacity: 500
+  gamma: 0.99
+  epsilon_start: 0.9
+  epsilon_end: 0.05
+  epsilon_decay: 0.995
+  curiosity_bonus: 0.2
+  update_target_every: 10
+  
+  # PPO parameters
+  ppo_epochs: 4
+  clip_param: 0.2
+  value_loss_coef: 0.5
+  entropy_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # Environment settings
+  env_type: "text"  # text, vision, audio, or multimodal
+  max_steps_per_episode: 100
+  reward_scale: 1.0
+  use_intrinsic_reward: true 

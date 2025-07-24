@@ -1,0 +1,22 @@
+# Code generation configuration
+extends: base.yaml
+
+model:
+  name: "SalesA AI - Code Generation"
+  num_layers: 16  # Deep model for code understanding
+  hidden_dim: 1024  # Large context for code patterns
+  num_experts: 12  # More experts for different programming paradigms
+  max_seq_len: 4096  # Longer sequences for code
+
+training:
+  batch_size: 4  # Smaller batch due to longer sequences
+  learning_rate: 2.0e-5  # Lower learning rate for precision
+  num_epochs: 30
+  gradient_accumulation_steps: 4  # Effective batch size of 16
+  dropout_rate: 0.15  # Higher dropout for better generalization
+
+data:
+  dataset_name: ["humaneval", "ds1000"]  # Code-specific datasets
+  task_type: "code"
+  max_text_length: 4096  # Long context for code
+  num_workers: 2  # More workers for code processing 

@@ -1,0 +1,66 @@
+# Base configuration for SalesA AI
+model:
+  name: "SalesA AI"
+  author: "Created by N.E.N (Nthuku Elijah Nzeli) and SalesA Team"
+  
+  # Model architecture
+  vocab_size: 32000
+  hidden_dim: 512
+  num_layers: 8
+  num_heads: 8
+  intermediate_dim: 1024
+  max_seq_len: 2048
+
+  # MoE configuration
+  num_experts: 4
+  expert_capacity: 2
+  top_k: 2
+
+  # Multimodal dimensions
+  vision_dim: 224
+  audio_dim: 80
+  vision_patch_size: 16
+  audio_patch_size: 4
+
+training:
+  # Training parameters
+  batch_size: 4
+  learning_rate: 1.0e-4
+  weight_decay: 1.0e-5
+  dropout_rate: 0.1
+  num_epochs: 10
+  early_stopping_patience: 3
+  gradient_accumulation_steps: 1
+  gradient_clip_norm: 1.0
+
+  # Optimization
+  use_mixed_precision: false
+  gradient_checkpointing: true
+
+data:
+  # Data parameters
+  max_text_length: 1024
+  max_audio_length: 16000  # 1 second at 16kHz
+  action_dim: 10  # Number of possible actions for robotics
+  num_workers: 0  # Safer default for CPU
+  pin_memory: true
+
+  # Dataset selection
+  dataset_name: "auto"  # or specific dataset name
+  task_type: "text"  # text, vision, audio, code, financial
+
+rl:
+  # RL training parameters
+  num_episodes: 10
+  buffer_capacity: 500
+  memory_capacity: 100
+  gamma: 0.99
+  epsilon: 0.2
+  curiosity_bonus: 0.1
+  update_target_every: 5
+
+paths:
+  # File paths
+  export_dir: "./SalesA"
+  checkpoint_dir: "./checkpoints"
+  log_dir: "./logs" 
