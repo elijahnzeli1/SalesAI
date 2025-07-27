@@ -12,88 +12,123 @@ import soundfile as sf
 import io
 from pathlib import Path
 from huggingface_hub import snapshot_download
-from datasets import load_dataset
+from datasets import load_dataset, IterableDataset
 import os
+from collections import deque
+import threading
+import time
 
 from config import SalesAConfig
 from tokenizer import SalesATokenizer
 
 logger = logging.getLogger(__name__)
 
-class MultimodalDataset(Dataset):
-    """Dataset for multimodal training with real datasets and action support"""
+class StreamingDatasetWrapper:
+    """Wrapper for streaming datasets with caching and prefetching"""
+    
+    def __init__(self, dataset, max_cache_size=1000):
+        self.dataset = dataset
+        self.cache = deque(maxlen=max_cache_size)
+        self.cache_lock = threading.Lock()
+        self.prefetch_thread = None
+        self.stop_prefetch = False
+        self._iterator = None
+        
+    def start_prefetching(self):
+        """Start background prefetching of samples"""
+        if self.prefetch_thread is None or not self.prefetch_thread.is_alive():
+            self.stop_prefetch = False
+            self.prefetch_thread = threading.Thread(target=self._prefetch_worker)
+            self.prefetch_thread.daemon = True
+            self.prefetch_thread.start()
+    
+    def stop_prefetching(self):
+        """Stop background prefetching"""
+        self.stop_prefetch = True
+        if self.prefetch_thread and self.prefetch_thread.is_alive():
+            self.prefetch_thread.join(timeout=1.0)
+    
+    def _prefetch_worker(self):
+        """Background worker for prefetching samples"""
+        try:
+            # Handle IterableDatasets properly
+            if isinstance(self.dataset, IterableDataset):
+                for item in self.dataset:
+                    if self.stop_prefetch:
+                        break
+                    with self.cache_lock:
+                        if len(self.cache) < self.cache.maxlen:
+                            self.cache.append(item)
+                    time.sleep(0.001)  # Small delay to prevent overwhelming
+            else:
+                # Regular dataset
+                for item in self.dataset:
+                    if self.stop_prefetch:
+                        break
+                    with self.cache_lock:
+                        if len(self.cache) < self.cache.maxlen:
+                            self.cache.append(item)
+                    time.sleep(0.001)  # Small delay to prevent overwhelming
+        except Exception as e:
+            logger.warning(f"Prefetch worker error: {e}")
+    
+    def __iter__(self):
+        return self
+    
+    def __next__(self):
+        with self.cache_lock:
+            if self.cache:
+                return self.cache.popleft()
+        
+        # If cache is empty, get directly from dataset
+        # Handle both regular datasets and IterableDatasets
+        if isinstance(self.dataset, IterableDataset):
+            if self._iterator is None:
+                self._iterator = iter(self.dataset)
+            return next(self._iterator)
+        else:
+            return next(self.dataset)
 
-    def __init__(self, config: SalesAConfig, tokenizer: SalesATokenizer, split: str = "train", dataset_name: Union[str, List[str]] = "auto", task_type: Optional[str] = None):
+class MultimodalDataset(Dataset):
+    """Dataset for multimodal training with hybrid streaming approach"""
+
+    def __init__(self, config: SalesAConfig, tokenizer: SalesATokenizer, split: str = "train", dataset_name: Union[str, List[str]] = "auto", task_type: Optional[str] = None, use_streaming: bool = True, cache_size: int = 1000):
         self.config = config
         self.tokenizer = tokenizer
         self.split = split
         self.dataset_name = dataset_name
         self.task_type = task_type
-        self.data = self._load_data()   
+        self.use_streaming = use_streaming
+        self.cache_size = cache_size
+        self.streaming_datasets = []
+        self.processed_samples = []
+        self.sample_count = 0
+        self.max_samples_per_dataset = 2000 if split == "train" else 500
+        
+        # Initialize streaming datasets
+        self._initialize_streaming_datasets()
+        
+        # Start prefetching for all streaming datasets
+        for wrapper in self.streaming_datasets:
+            wrapper.start_prefetching()
 
-    def _load_data(self) -> List[Dict]:
-        """Load and prepare multimodal data from real datasets"""
-        data = []
-
+    def _initialize_streaming_datasets(self):
+        """Initialize streaming datasets without downloading"""
         # Define available datasets with their configurations
         dataset_configs = {
-            # Audio–text question answering
-            "clotho_aqa": {
-                "name": "CLAPv2/ClothoAQA",
-                "config": None,
-                "has_image": False,
-                "has_text": True,
-                "has_audio": True,
-                "audio_key": "audio",
-                "text_key": "question",
-                "answer_key": "answer",
-                "limit": 1500 if self.split == "train" else 500,
-                "max_samples": 1500 
-            },
             # Tri‑modal: image + audio + text
             "luma": {
                 "name": "bezirganyan/LUMA",
                 "config": None,
-                "has_image": True,
+                "has_image": False,  # Images are not included in HF dataset - need separate compilation
                 "has_text": True,
                 "has_audio": True,
                 "image_key": "image",
                 "audio_key": "audio",
                 "text_key": "text",
                 "limit": 2000 if self.split == "train" else 500,
-                "max_samples": 1500
-            },
-            # Beans you already have:
-            "beans": {
-                "name": "AI-Lab-Makerere/beans",
-                "config": None,
-                "has_image": True,
-                "has_text": False,
-                "has_audio": False,
-                "image_key": "image",
-                "text_key": None,
-                "limit": 1000 if self.split == "train" else 200,
-                "max_samples": 1000
-            },
-            "prosocial_dialog": {
-                "name": "allenai/prosocial-dialog",
-                "config": None,
-                "has_image": False,
-                "has_text": True,
-                "has_audio": False,
-                "text_key": "text",
-                "labels_key": "labels",
-                "answer_key": None,
-                "limit": 5000 if self.split == "train" else 1000,
-                "max_samples": 2000
-            },
-            "logic_reasoning": {
-                "name": "LogiQA",
-                "config": None,
-                "has_text": True,
-                "task": "multiple_choice",
-                "limit": 8000 if self.split=="train" else 2000,
-                "max_samples": 10000
+                "max_samples": 1500,
+                "note": "LUMA images require separate compilation tool. Only audio+text available in HF dataset."
             },
             "open_platypus": {
                 "name": "garage-bAInd/Open-Platypus",
@@ -106,17 +141,6 @@ class MultimodalDataset(Dataset):
                 "limit": 10000 if self.split == "train" else 2000,
                 "max_samples": 10000
             },
-            "financial_phrasebank": {
-                "name": "atrost/financial_phrasebank",
-                "config": "sentences_50agree",
-                "has_image": False,
-                "has_text": True,
-                "has_audio": False,
-                "text_key": "sentence",
-                "labels_key": "label",
-                "limit": 5000 if self.split == "train" else 1000,
-                "max_samples": 5000
-            },
             "humaneval": {
                 "name": "code-rag-bench/humaneval",
                 "config": None,
@@ -128,17 +152,6 @@ class MultimodalDataset(Dataset):
                 "limit": 1000 if self.split == "train" else 200,
                 "max_samples": 2000
             },
-            "ds1000": {
-                "name": "code-rag-bench/ds1000",
-                "config": None,
-                "has_image": False,
-                "has_text": True,
-                "has_audio": False,
-                "text_key": "prompt",
-                "labels_key": "solution",
-                "limit": 1000 if self.split == "train" else 200,
-                "max_samples": 10000
-            },
         }
 
         # --- Enhanced automatic selection logic ---
@@ -146,17 +159,17 @@ class MultimodalDataset(Dataset):
             # Select default dataset(s) based on task_type
             if hasattr(self, 'task_type') and self.task_type:
                 if self.task_type in ["code", "code-generation"]:
-                    selected_datasets = ["humaneval", "ds1000"]
+                    selected_datasets = ["humaneval"]
                 elif self.task_type == "vision":
                     selected_datasets = ["beans"]
                 elif self.task_type == "audio":
-                    selected_datasets = ["clotho_aqa"]
+                    selected_datasets = ["luma"]
                 elif self.task_type in ["financial", "stock"]:
                     selected_datasets = ["financial_phrasebank"]
                 elif self.task_type == "text":
-                    selected_datasets = ["prosocial_dialog"]
+                    selected_datasets = ["open_platypus"]
                 else:
-                    selected_datasets = ["logic_reasoning"]
+                    selected_datasets = ["open_platypus"]
             else:
                 # Fallback to general text dataset
                 selected_datasets = ["open_platypus"]
@@ -167,7 +180,7 @@ class MultimodalDataset(Dataset):
         else:
             selected_datasets = [self.dataset_name]
 
-        # Load each selected dataset
+        # Initialize streaming datasets
         for dataset_key in selected_datasets:
             if dataset_key not in dataset_configs:
                 logger.warning(f"Unknown dataset: {dataset_key}")
@@ -175,38 +188,20 @@ class MultimodalDataset(Dataset):
 
             dataset_config = dataset_configs[dataset_key]
             try:
-                # Attempt to load the dataset
-                loaded_data = self._load_single_dataset(dataset_config)
-                data.extend(loaded_data)
+                streaming_dataset = self._create_streaming_dataset(dataset_config)
+                if streaming_dataset:
+                    self.streaming_datasets.append(streaming_dataset)
+                    logger.info(f"Initialized streaming dataset: {dataset_config['name']}")
             except Exception as e:
-                logger.error(f"Failed to load dataset {dataset_key}: {e}")
-                # Continue to the next dataset even if one fails
+                logger.error(f"Failed to initialize streaming dataset {dataset_key}: {e}")
 
-        # If no real data was loaded, fall back to synthetic data
-        if not data:
-            logger.warning("No real datasets loaded successfully. Generating synthetic data.")
-            data = self._generate_synthetic_data()
+        # If no streaming datasets were created, fall back to synthetic data
+        if not self.streaming_datasets:
+            logger.warning("No streaming datasets initialized. Will use synthetic data.")
+            self._generate_synthetic_data()
 
-        logger.info(f"Total samples loaded: {len(data)}")
-        return data
-
-    def _ensure_local_dataset(self, repo_id, config=None):
-        """Ensure the dataset is downloaded locally and return the local path. Skip download if already present."""
-        import os
-        local_dir = os.path.join("datasets", repo_id.replace('/', '__'))
-        marker_file = os.path.join(local_dir, ".download_complete")
-        if not os.path.exists(local_dir) or not os.path.exists(marker_file):
-            snapshot_download(repo_id=repo_id, repo_type="dataset", local_dir=local_dir)
-            # Create marker file to indicate download is complete
-            os.makedirs(local_dir, exist_ok=True)
-            with open(marker_file, "w") as f:
-                f.write("downloaded")
-        return local_dir
-
-    def _load_single_dataset(self, dataset_config: Dict) -> List[Dict]:
-        """Load a single dataset based on its configuration, preferring local download."""
-        data = []
-        logger.info(f"Loading dataset: {dataset_config['name']}")
+    def _create_streaming_dataset(self, dataset_config: Dict) -> Optional[StreamingDatasetWrapper]:
+        """Create a streaming dataset wrapper"""
         try:
             # Handle special split cases
             if dataset_config['name'] == "bezirganyan/LUMA" and self.split == "validation":
@@ -217,141 +212,86 @@ class MultimodalDataset(Dataset):
             else:
                 split_to_use = self.split
 
-            # Limit download size by max_samples if present
-            max_samples = dataset_config.get('max_samples', None)
-            if max_samples:
-                split_str = f"{split_to_use}[:{max_samples}]"
-            else:
-                split_str = split_to_use
-
-            # Download and load from local directory if not already local
-            if not os.path.exists(dataset_config['name']) and not dataset_config['name'].startswith("./"):
-                local_dir = self._ensure_local_dataset(dataset_config['name'], dataset_config.get('config'))
-                if dataset_config['config']:
-                    dataset = load_dataset(
-                        local_dir,
-                        dataset_config['config'],
-                        split=split_str,
-                        streaming=False
-                    )
-                else:
-                    dataset = load_dataset(
-                        local_dir,
-                        split=split_str,
-                        streaming=False
-                    )
-            else:
-                # Already local or custom path
+            # Create streaming dataset
+            if self.use_streaming:
                 if dataset_config['config']:
                     dataset = load_dataset(
                         dataset_config['name'],
                         dataset_config['config'],
-                        split=split_str,
+                        split=split_to_use,
+                        streaming=True
+                    )
+                else:
+                    dataset = load_dataset(
+                        dataset_config['name'],
+                        split=split_to_use,
+                        streaming=True
+                    )
+            else:
+                # Fallback to non-streaming for datasets that don't support streaming
+                if dataset_config['config']:
+                    dataset = load_dataset(
+                        dataset_config['name'],
+                        dataset_config['config'],
+                        split=split_to_use,
                         streaming=False
                     )
                 else:
                     dataset = load_dataset(
                         dataset_config['name'],
-                        split=split_str,
+                        split=split_to_use,
                         streaming=False
                     )
 
-            # Process samples
-            count = 0
-            first_sample = None
-            for item in dataset:
-                if count == 0:
-                    first_sample = item
-                if count >= dataset_config['limit']:
-                    break
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    sample = self._process_sample(item, dataset_config)
-                    if sample:
-                        data.append(sample)
-                        count += 1
-                        if count % 1000 == 0:
-                            logger.info(f"Processed {count} samples from {dataset_config['name']}")
-                except Exception as e:
-                    logger.warning(f"Error processing sample {count} from {dataset_config['name']}: {e}")
-                    continue
-            logger.info(f"Successfully loaded {len(data)} samples from {dataset_config['name']}")
-            if count == 0:
-                logger.warning(f"No samples loaded from {dataset_config['name']} (split: {split_to_use}). Check split/key names.")
-                if first_sample is not None:
-                    if isinstance(first_sample, dict):
-                        logger.warning(f"First sample keys: {list(first_sample.keys())}")
-                    else:
-                        logger.warning(f"First sample type: {type(first_sample)}, value: {first_sample}")
+            # Wrap with streaming wrapper
+            wrapper = StreamingDatasetWrapper(dataset, max_cache_size=self.cache_size)
+            wrapper.dataset_config = dataset_config
+            wrapper.samples_processed = 0
+            
+            return wrapper
+
         except Exception as e:
-            logger.error(f"Error loading dataset {dataset_config['name']}: {e}")
-            # Generate synthetic data for this dataset instead of failing completely
-            logger.info(f"Generating synthetic data for {dataset_config['name']}")
-            synthetic_data = self._generate_synthetic_data_for_dataset(dataset_config)
-            data.extend(synthetic_data)
+            logger.error(f"Error creating streaming dataset {dataset_config['name']}: {e}")
+            return None
 
-        logger.info(f"Successfully loaded {len(data)} samples from {dataset_config['name']}")
-        return data
+    def _load_data(self) -> List[Dict]:
+        """This method is now deprecated - data is loaded on-demand via streaming"""
+        logger.warning("_load_data is deprecated. Use streaming approach instead.")
+        return []
 
-    def _generate_synthetic_data_for_dataset(self, dataset_config: Dict) -> List[Dict]:
-        """Generate synthetic data for a specific dataset configuration"""
-        num_samples = dataset_config['limit']
-        synthetic_data = []
+    def _ensure_local_dataset(self, repo_id, config=None):
+        """This method is now deprecated - we use streaming instead of local downloads"""
+        logger.warning("_ensure_local_dataset is deprecated. Using streaming approach instead.")
+        return None
 
-        logger.info(f"Generating {num_samples} synthetic samples for {dataset_config['name']}")
+    def _load_single_dataset(self, dataset_config: Dict) -> List[Dict]:
+        """This method is now deprecated - datasets are handled via streaming"""
+        logger.warning("_load_single_dataset is deprecated. Use streaming approach instead.")
+        return []
 
-        for i in range(num_samples):
-            # Create sample based on dataset configuration
-            sample = {
-                "text": None,
-                "image": None,
-                "audio": None,
-                "task_type": "text",
-                "labels": None,
-                "action_labels": None  # For robotics
-            }
-
-            # Generate text if needed
-            if dataset_config['has_text']:
-                text_length = random.randint(10, 50)
-                text_tokens = torch.randint(1, self.config.vocab_size, (text_length,))
-                sample["text"] = text_tokens
-                sample["labels"] = text_tokens.clone()
-
-            # Generate image if needed
-            if dataset_config['has_image']:
-                image = torch.randn(3, self.config.vision_dim, self.config.vision_dim)
-                image = torch.clamp(image, -2, 2)
-                sample["image"] = image
-                # --- FIX: Always generate a valid label for vision samples ---
-                sample["labels"] = torch.tensor([random.randint(0, 9)], dtype=torch.long)  # 10-class synthetic label
-
-            # Generate audio if needed
-            if dataset_config['has_audio']:
-                audio = torch.randn(self.config.max_audio_length) * 0.1
-                sample["audio"] = audio
-
-            # Generate action label for robotics
-            if random.random() < 0.2:  # 20% of samples are action samples
-                sample["action_labels"] = torch.tensor([random.randint(0, self.config.action_dim - 1)], dtype=torch.long)
-                sample["task_type"] = "action"
-
-            # Determine task type
-            if sample["image"] is not None and sample["text"] is not None:
-                sample["task_type"] = "vision_text"
-            elif sample["audio"] is not None and sample["text"] is not None:
-                sample["task_type"] = "audio_text"
-            elif sample["text"] is not None:
-                sample["task_type"] = "text"
-            elif sample["image"] is not None:
-                sample["task_type"] = "vision"
-            elif sample["audio"] is not None:
-                sample["task_type"] = "audio"
-
-            synthetic_data.append(sample)
-
-        return synthetic_data
+    def _get_next_sample(self) -> Optional[Dict]:
+        """Get the next sample from any available streaming dataset"""
+        for wrapper in self.streaming_datasets:
+            if wrapper.samples_processed >= self.max_samples_per_dataset:
+                continue
+                
+            try:
+                item = next(wrapper)
+                if item is None:
+                    continue
+                    
+                sample = self._process_sample(item, wrapper.dataset_config)
+                if sample:
+                    wrapper.samples_processed += 1
+                    return sample
+            except StopIteration:
+                # This dataset is exhausted
+                continue
+            except Exception as e:
+                logger.warning(f"Error getting sample from {wrapper.dataset_config['name']}: {e}")
+                continue
+        
+        return None
 
     def _process_sample(self, item: Dict, dataset_config: Dict) -> Optional[Dict]:
         """Process a single sample from a dataset"""
@@ -521,11 +461,10 @@ class MultimodalDataset(Dataset):
 
         return sample
 
-    def _generate_synthetic_data(self) -> List[Dict]:
+    def _generate_synthetic_data(self):
         """Generate synthetic data as fallback"""
         logger.info("Generating synthetic multimodal data")
 
-        data = []
         num_samples = 1000 if self.split == "train" else 200
 
         for i in range(num_samples):
@@ -552,12 +491,58 @@ class MultimodalDataset(Dataset):
 
             # Ensure at least one modality is present
             if sample["text"] is not None or sample["image"] is not None or sample["audio"] is not None:
-                data.append(sample)
-
-        return data
+                self.processed_samples.append(sample)
 
     def __len__(self):
-        return len(self.data)
+        """Return estimated length based on configured limits"""
+        total_length = 0
+        for wrapper in self.streaming_datasets:
+            total_length += min(wrapper.dataset_config['limit'], self.max_samples_per_dataset)
+        
+        # Add synthetic data length if no streaming datasets
+        if not self.streaming_datasets:
+            total_length = 1000 if self.split == "train" else 200
+            
+        return total_length
 
     def __getitem__(self, idx):
-        return self.data[idx] 
+        """Get item by index - implements hybrid approach"""
+        # If we have processed samples in memory, return from there
+        if idx < len(self.processed_samples):
+            return self.processed_samples[idx]
+        
+        # Otherwise, get from streaming datasets
+        if self.streaming_datasets:
+            sample = self._get_next_sample()
+            if sample:
+                self.processed_samples.append(sample)
+                return sample
+        
+        # Fallback to synthetic data
+        if not self.processed_samples:
+            self._generate_synthetic_data()
+            if idx < len(self.processed_samples):
+                return self.processed_samples[idx]
+        
+        # If all else fails, return a synthetic sample
+        return self._generate_single_synthetic_sample()
+
+    def _generate_single_synthetic_sample(self):
+        """Generate a single synthetic sample on-demand"""
+        text_length = random.randint(10, 50)
+        text_tokens = torch.randint(1, self.config.vocab_size, (text_length,))
+        
+        sample = {
+            "text": text_tokens,
+            "image": None,
+            "audio": None,
+            "task_type": "text",
+            "labels": text_tokens.clone()
+        }
+        
+        return sample
+
+    def __del__(self):
+        """Cleanup streaming datasets"""
+        for wrapper in self.streaming_datasets:
+            wrapper.stop_prefetching()
