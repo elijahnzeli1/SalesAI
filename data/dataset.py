@@ -152,6 +152,44 @@ class MultimodalDataset(Dataset):
                 "limit": 1000 if self.split == "train" else 200,
                 "max_samples": 2000
             },
+            # Add missing dataset configurations
+            "clotho_aqa": {
+                "name": "m-a-p/CLOTHO-AQA",
+                "config": None,
+                "has_image": False,
+                "has_text": True,
+                "has_audio": True,
+                "audio_key": "audio",
+                "text_key": "question",
+                "answer_key": "answer",
+                "limit": 1000 if self.split == "train" else 200,
+                "max_samples": 1000,
+                "note": "Audio-visual question answering dataset"
+            },
+            "beans": {
+                "name": "beans",
+                "config": None,
+                "has_image": True,
+                "has_text": False,
+                "has_audio": False,
+                "image_key": "image",
+                "text_key": "label",
+                "limit": 1000 if self.split == "train" else 200,
+                "max_samples": 1000,
+                "note": "Image classification dataset for bean disease detection"
+            },
+            "prosocial_dialog": {
+                "name": "allenai/prosocial-dialog",
+                "config": None,
+                "has_image": False,
+                "has_text": True,
+                "has_audio": False,
+                "text_key": "context",
+                "labels_key": "response",
+                "limit": 2000 if self.split == "train" else 500,
+                "max_samples": 2000,
+                "note": "Prosocial dialog dataset for safe AI conversations"
+            },
         }
 
         # --- Enhanced automatic selection logic ---
