@@ -43,7 +43,7 @@ SalesA AI is not just another transformer—it's a **foundational AGI seed** des
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/elijahnzeli1/SalesAI.git
 cd SalesAI
 
 # Install dependencies
