@@ -59,6 +59,9 @@ class TrainingConfig:
     gradient_clip_norm: float = 1.0
     use_mixed_precision: bool = False
     gradient_checkpointing: bool = True
+    warmup_steps: int = 0
+    cosine_schedule: bool = False
+    label_smoothing: float = 0.0
 
 @dataclass
 class DataConfig:
@@ -72,6 +75,9 @@ class DataConfig:
     vision_augment: bool = False
     audio_augment: bool = False
     text_augment: bool = False
+    text_dropout: float = 0.0
+    vision_dropout: float = 0.0
+    audio_dropout: float = 0.0
 
 @dataclass
 class RLConfig:
@@ -82,6 +88,7 @@ class RLConfig:
     epsilon_start: float = 0.9
     epsilon_end: float = 0.05
     epsilon_decay: float = 0.995
+    epsilon: float = 0.1
     curiosity_bonus: float = 0.1
     update_target_every: int = 5
     ppo_epochs: int = 4
@@ -89,6 +96,10 @@ class RLConfig:
     value_loss_coef: float = 0.5
     entropy_coef: float = 0.01
     max_grad_norm: float = 0.5
+    double_dqn: bool = False
+    dueling_dqn: bool = False
+    prioritized_replay: bool = False
+    n_step_returns: int = 1
     env_type: str = "text"
     max_steps_per_episode: int = 100
     reward_scale: float = 1.0
