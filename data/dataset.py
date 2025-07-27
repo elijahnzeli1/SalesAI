@@ -1,29 +1,62 @@
 import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
-import torchvision.transforms as transforms
-import torchaudio
-from PIL import Image
 import numpy as np
 import logging
 import random
 from typing import Dict, List, Optional, Union, Any
-import soundfile as sf
-import io
-from pathlib import Path
-from huggingface_hub import snapshot_download
-from datasets import load_dataset, IterableDataset
 import os
 from collections import deque
 import threading
 import time
+from pathlib import Path
+from huggingface_hub import snapshot_download
+from datasets import load_dataset, IterableDataset
+
+# Import torchvision with error handling to avoid circular imports
+try:
+    import torchvision.transforms as transforms
+    TORCHVISION_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  TorchVision not available: {e}")
+    TORCHVISION_AVAILABLE = False
+    transforms = None
+
+# Import torchaudio with error handling
+try:
+    import torchaudio
+    TORCHAUDIO_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  TorchAudio not available: {e}")
+    TORCHAUDIO_AVAILABLE = False
+    torchaudio = None
+
+# Import PIL with error handling
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  PIL not available: {e}")
+    PIL_AVAILABLE = False
+    Image = None
+
+# Import soundfile with error handling
+try:
+    import soundfile as sf
+    SOUNDFILE_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  SoundFile not available: {e}")
+    SOUNDFILE_AVAILABLE = False
+    sf = None
 
 # Conditionally disable TorchCodec only if not properly installed
 try:
     import torchcodec
     os.environ['TORCHCODEC_DISABLE'] = '0'  # Enable if available
+    TORCHCODEC_AVAILABLE = True
 except ImportError:
     os.environ['TORCHCODEC_DISABLE'] = '1'  # Disable if not available
+    TORCHCODEC_AVAILABLE = False
     print("⚠️  TorchCodec not available - audio processing will be limited")
 
 from config import SalesAConfig
@@ -389,6 +422,9 @@ class MultimodalDataset(Dataset):
                         elif isinstance(audio_data, np.ndarray):
                             # Already numpy array
                             processed_item["audio"] = audio_data
+                        elif isinstance(audio_data, torch.Tensor):
+                            # PyTorch tensor
+                            processed_item["audio"] = audio_data
                         else:
                             logger.warning(f"Audio format not supported: {type(audio_data)}")
                             
@@ -403,7 +439,10 @@ class MultimodalDataset(Dataset):
                 if image_key in item:
                     try:
                         image_data = item[image_key]
-                        if hasattr(image_data, 'convert'):
+                        if PIL_AVAILABLE and hasattr(image_data, 'convert'):
+                            processed_item["image"] = image_data
+                        elif isinstance(image_data, (torch.Tensor, np.ndarray)):
+                            # Handle tensor/array format
                             processed_item["image"] = image_data
                         else:
                             logger.warning(f"Image format not supported: {type(image_data)}")
