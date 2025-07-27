@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Union
 import tiktoken
 import torch
 
@@ -34,14 +34,21 @@ def build_vocab_with_tiktoken(dataset, vocab_size=32000, model_name="gpt2"):
 
 class SalesATokenizer:
     """Tokenizer for SalesA AI using Tiktoken and extra domain tokens"""
-    def __init__(self, vocab_size: int = 32000, vocab: Optional[list] = None, enc=None, model_name: str = "gpt2"):
+    def __init__(self, vocab_size: int = 32000, vocab: Optional[Union[list, dict]] = None, enc=None, model_name: str = "gpt2"):
         self.vocab_size = vocab_size
         if enc is not None:
             self.enc = enc
         else:
             self.enc = tiktoken.get_encoding(model_name)
         if vocab is not None:
-            self.vocab = vocab[:vocab_size]
+            # Handle both list and dict vocab formats
+            if isinstance(vocab, dict):
+                # Convert dict to list format
+                vocab_list = list(vocab.keys())
+                self.vocab = vocab_list[:vocab_size]
+            else:
+                # Handle list format
+                self.vocab = vocab[:vocab_size] if isinstance(vocab, list) else list(vocab)[:vocab_size]
         else:
             self.vocab = list(self.enc._mergeable_ranks.keys())[:vocab_size]
         self.token_to_id = {token: i for i, token in enumerate(self.vocab)}

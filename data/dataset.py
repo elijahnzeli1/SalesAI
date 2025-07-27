@@ -332,172 +332,93 @@ class MultimodalDataset(Dataset):
         return None
 
     def _process_sample(self, item: Dict, dataset_config: Dict) -> Optional[Dict]:
-        """Process a single sample from a dataset"""
-
-        # Initialize sample
-        sample = {
-            "text": None,
-            "image": None,
-            "audio": None,
-            "task_type": "text",
-            "labels": None
-        }
-
-        # Process text
-        if dataset_config['has_text'] and dataset_config['text_key'] in item:
-            text_content = item[dataset_config['text_key']]
-            # Prepend <STOCK> token for financial_phrasebank
-            if dataset_config.get('name', '') == 'financial_phrasebank':
-                text_content = "<STOCK> " + text_content
-            # Handle different text formats
-            if isinstance(text_content, list):
-                # For datasets with multiple captions
-                text_content = random.choice(text_content)
-            if isinstance(text_content, dict):
-                text_content = text_content.get('raw', str(text_content))
-            if text_content and isinstance(text_content, str) and len(text_content.strip()) > 0:
+        """Process a single sample from the dataset"""
+        try:
+            processed_item = {}
+            
+            # Handle text data with proper encoding
+            if dataset_config.get("has_text", False):
+                text_key = dataset_config.get("text_key", "text")
+                if text_key in item:
+                    try:
+                        # Handle different text formats and encoding issues
+                        text_data = item[text_key]
+                        if isinstance(text_data, bytes):
+                            text_data = text_data.decode('utf-8', errors='ignore')
+                        elif isinstance(text_data, list):
+                            text_data = " ".join([str(t) for t in text_data])
+                        elif not isinstance(text_data, str):
+                            text_data = str(text_data)
+                        
+                        # Clean and validate text
+                        if text_data and len(text_data.strip()) > 0:
+                            processed_item["text"] = text_data.strip()
+                    except (UnicodeDecodeError, AttributeError) as e:
+                        logger.warning(f"Text processing error: {e}")
+                        return None
+            
+            # Handle audio data with fallback
+            if dataset_config.get("has_audio", False):
+                audio_key = dataset_config.get("audio_key", "audio")
+                if audio_key in item:
+                    try:
+                        audio_data = item[audio_key]
+                        # Skip audio processing if torchcodec is not available
+                        if hasattr(audio_data, 'array'):
+                            processed_item["audio"] = audio_data.array
+                        elif isinstance(audio_data, (list, tuple)):
+                            processed_item["audio"] = np.array(audio_data)
+                        else:
+                            logger.warning(f"Audio format not supported: {type(audio_data)}")
+                    except Exception as e:
+                        logger.warning(f"Audio processing error: {e}")
+                        # Continue without audio
+            
+            # Handle image data
+            if dataset_config.get("has_image", False):
+                image_key = dataset_config.get("image_key", "image")
+                if image_key in item:
+                    try:
+                        image_data = item[image_key]
+                        if hasattr(image_data, 'convert'):
+                            processed_item["image"] = image_data
+                        else:
+                            logger.warning(f"Image format not supported: {type(image_data)}")
+                    except Exception as e:
+                        logger.warning(f"Image processing error: {e}")
+                        # Continue without image
+            
+            # Add labels if available
+            labels_key = dataset_config.get("labels_key")
+            if labels_key and labels_key in item:
                 try:
-                    text_tokens = torch.tensor(self.tokenizer.encode(text_content), dtype=torch.long)
-                    sample["text"] = text_tokens
-                    sample["labels"] = text_tokens.clone()
-                except Exception as e:
-                    logger.warning(f"Error tokenizing text: {e}")
-            # For financial_phrasebank, set sentiment label as classification label
-            if dataset_config.get('name', '') == 'financial_phrasebank' and 'labels_key' in dataset_config and dataset_config['labels_key'] in item:
-                sample["labels"] = torch.tensor([int(item[dataset_config['labels_key']])], dtype=torch.long)
-
-        # Process images
-        if dataset_config['has_image'] and dataset_config['image_key'] in item:
-            try:
-                image_data = item[dataset_config['image_key']]
-
-                # Handle different image formats
-                if isinstance(image_data, str):
-                    # Skip URL images for now
-                    logger.warning(f"Skipping image with URL: {image_data}")
-                elif hasattr(image_data, 'convert'):
-                    # PIL Image
-                    img = image_data.convert("RGB")
-                    transform = transforms.Compose([
-                        transforms.Resize((self.config.vision_dim, self.config.vision_dim)),
-                        transforms.ToTensor(),
-                        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                    ])
-                    sample["image"] = transform(img)
-                elif isinstance(image_data, np.ndarray):
-                    # Array format
-                    img = Image.fromarray(image_data).convert("RGB")
-                    transform = transforms.Compose([
-                        transforms.Resize((self.config.vision_dim, self.config.vision_dim)),
-                        transforms.ToTensor(),
-                        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-                    ])
-                    sample["image"] = transform(img)
-                else:
-                    logger.warning(f"Unsupported image format: {type(image_data)}")
-
-            except Exception as e:
-                logger.warning(f"Error processing image: {e}")
-
-        # Process audio - using soundfile as a fallback
-        if dataset_config['has_audio'] and dataset_config['audio_key'] in item:
-            try:
-                audio_data = item[dataset_config['audio_key']]
-                waveform = None
-                sample_rate = 16000
-
-                # Handle different audio formats
-                if isinstance(audio_data, dict) and 'array' in audio_data:
-                    # Standard audio dictionary format
-                    waveform = torch.tensor(audio_data['array'], dtype=torch.float32)
-                    sample_rate = audio_data.get('sampling_rate', 16000)
-                elif isinstance(audio_data, bytes):
-                    # Audio bytes
-                    with io.BytesIO(audio_data) as f:
-                        data, sample_rate = sf.read(f)
-                        waveform = torch.tensor(data, dtype=torch.float32)
-                elif isinstance(audio_data, str):
-                    # File path - skip for now
-                    logger.warning(f"Skipping audio file path: {audio_data}")
-                elif isinstance(audio_data, np.ndarray):
-                    # Numpy array
-                    waveform = torch.tensor(audio_data, dtype=torch.float32)
-
-                if waveform is not None:
-                    # Resample if necessary
-                    if sample_rate != 16000:
-                        resampler = torchaudio.transforms.Resample(
-                            orig_freq=sample_rate,
-                            new_freq=16000
-                        )
-                        waveform = resampler(waveform)
-
-                    # Ensure mono
-                    if waveform.dim() > 1:
-                        waveform = waveform.mean(dim=0)
-
-                    # Pad or truncate
-                    if len(waveform) > self.config.max_audio_length:
-                        waveform = waveform[:self.config.max_audio_length]
-                    else:
-                        waveform = F.pad(waveform, (0, self.config.max_audio_length - len(waveform)))
-
-                    sample["audio"] = waveform
-
-            except Exception as e:
-                logger.warning(f"Error processing audio: {e}")
-
-        # --- FIX: For vision-only samples, ensure a valid label is present ---
-        if dataset_config.get('has_image', False) and not dataset_config.get('has_text', False):
-            # Try to get a label for image classification
-            label = item.get('label') or item.get('labels')
-            if label is not None:
-                # If label is a string, map to int or use tokenizer if vision-to-text
-                if isinstance(label, str):
-                    # Use tokenizer if vision-to-text, else hash to int
-                    label_id = self.tokenizer.encode(label)[0] if hasattr(self, 'tokenizer') else abs(hash(label)) % 1000
-                else:
-                    label_id = int(label)
-                sample["labels"] = torch.tensor([label_id], dtype=torch.long)
+                    label_data = item[labels_key]
+                    if isinstance(label_data, bytes):
+                        label_data = label_data.decode('utf-8', errors='ignore')
+                    processed_item["labels"] = str(label_data)
+                except (UnicodeDecodeError, AttributeError) as e:
+                    logger.warning(f"Label processing error: {e}")
+            
+            # Add answer if available (for QA datasets)
+            answer_key = dataset_config.get("answer_key")
+            if answer_key and answer_key in item:
+                try:
+                    answer_data = item[answer_key]
+                    if isinstance(answer_data, bytes):
+                        answer_data = answer_data.decode('utf-8', errors='ignore')
+                    processed_item["answer"] = str(answer_data)
+                except (UnicodeDecodeError, AttributeError) as e:
+                    logger.warning(f"Answer processing error: {e}")
+            
+            # Only return if we have at least text or audio data
+            if "text" in processed_item or "audio" in processed_item:
+                return processed_item
             else:
-                # If no label, skip this sample
                 return None
-
-        # Handle VQA specific format
-        if 'answer_key' in dataset_config and dataset_config['answer_key'] in item:
-            answer = item[dataset_config['answer_key']]
-            if sample["text"] is not None:
-                try:
-                    question_text = self.tokenizer.decode(sample["text"].tolist())
-                    combined_text = f"Question: {question_text} Answer: {answer}"
-                    combined_tokens = torch.tensor(self.tokenizer.encode(combined_text), dtype=torch.long)
-                    sample["labels"] = combined_tokens
-                except:
-                    pass
-
-        # Determine the primary task type
-        if sample["image"] is not None and sample["text"] is not None:
-            sample["task_type"] = "vision_text"
-        elif sample["audio"] is not None and sample["text"] is not None:
-            sample["task_type"] = "audio_text"
-        elif sample["text"] is not None:
-            sample["task_type"] = "text"
-        elif sample["image"] is not None:
-            sample["task_type"] = "vision"
-        elif sample["audio"] is not None:
-            sample["task_type"] = "audio"
-        else:
-            # If no valid modality data, skip
+                
+        except Exception as e:
+            logger.warning(f"Sample processing error: {e}")
             return None
-
-        # Ensure labels are set
-        if sample["task_type"] in ["text", "vision_text", "audio_text"] and sample["labels"] is None:
-            if sample["text"] is not None:
-                sample["labels"] = sample["text"].clone()
-            else:
-                return None
-
-        return sample
 
     def _generate_synthetic_data(self):
         """Generate synthetic data as fallback"""
@@ -542,6 +463,23 @@ class MultimodalDataset(Dataset):
             total_length = 1000 if self.split == "train" else 200
             
         return total_length
+
+    @property
+    def data(self):
+        """Property to access processed samples for vocabulary building"""
+        # Ensure we have some data loaded
+        if not self.processed_samples:
+            # Load a few samples to build vocabulary
+            for i in range(min(100, len(self))):
+                try:
+                    sample = self[i]
+                    if sample and "text" in sample:
+                        self.processed_samples.append(sample)
+                except Exception as e:
+                    logger.warning(f"Error loading sample {i}: {e}")
+                    continue
+        
+        return self.processed_samples
 
     def __getitem__(self, idx):
         """Get item by index - implements hybrid approach"""
