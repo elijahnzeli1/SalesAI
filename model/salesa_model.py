@@ -3,7 +3,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Dict, Optional, Any, List
 import numpy as np
-import torchaudio
+
+# Make torchaudio import optional
+try:
+    import torchaudio
+    TORCHAUDIO_AVAILABLE = True
+except ImportError:
+    TORCHAUDIO_AVAILABLE = False
+    torchaudio = None
+    print("⚠️  TorchAudio not available - audio features will be limited")
 
 from config import SalesAConfig
 from model.encoders import TextEncoder, VisionEncoder, AudioEncoder
@@ -241,7 +249,7 @@ class SalesAModel(nn.Module):
         """Text-to-speech: returns waveform bytes"""
         try:
             # Try to use torchaudio's TTS pipeline if available
-            if hasattr(torchaudio.pipelines, 'TTS'):
+            if TORCHAUDIO_AVAILABLE and hasattr(torchaudio.pipelines, 'TTS'):
                 # Use torchaudio's built-in TTS
                 tts_pipeline = torchaudio.pipelines.TTS()
                 waveform, sample_rate = tts_pipeline(text)

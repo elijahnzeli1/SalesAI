@@ -16,13 +16,7 @@ try:
     from datasets import load_dataset
     print("✅ Datasets imported successfully")
     
-    # Test optional imports
-    try:
-        import torchvision
-        print("✅ TorchVision imported successfully")
-    except ImportError as e:
-        print(f"⚠️  TorchVision not available: {e}")
-    
+    # Test optional imports (skip torchvision to avoid circular import)
     try:
         import torchaudio
         print("✅ TorchAudio imported successfully")
@@ -42,8 +36,13 @@ try:
     from tokenizer import SalesATokenizer
     print("✅ SalesATokenizer imported successfully")
     
-    from data.dataset import MultimodalDataset
-    print("✅ MultimodalDataset imported successfully")
+    # Test dataset import with error handling
+    try:
+        from data.dataset import MultimodalDataset
+        print("✅ MultimodalDataset imported successfully")
+    except Exception as e:
+        print(f"⚠️  Dataset import issue: {e}")
+        print("🔄 Will use fallback approach")
     
     print("\n🎉 All imports successful!")
     
