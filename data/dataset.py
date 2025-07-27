@@ -18,6 +18,9 @@ from collections import deque
 import threading
 import time
 
+# Disable TorchCodec to avoid compatibility issues
+os.environ['TORCHCODEC_DISABLE'] = '1'
+
 from config import SalesAConfig
 from tokenizer import SalesATokenizer
 
@@ -122,13 +125,13 @@ class MultimodalDataset(Dataset):
                 "config": None,
                 "has_image": False,  # Images are not included in HF dataset - need separate compilation
                 "has_text": True,
-                "has_audio": True,
+                "has_audio": False,  # Disabled audio to avoid TorchCodec issues
                 "image_key": "image",
                 "audio_key": "audio",
                 "text_key": "text",
                 "limit": 2000 if self.split == "train" else 500,
                 "max_samples": 1500,
-                "note": "LUMA images require separate compilation tool. Only audio+text available in HF dataset."
+                "note": "LUMA text-only mode to avoid TorchCodec compatibility issues"
             },
             "open_platypus": {
                 "name": "garage-bAInd/Open-Platypus",
@@ -375,8 +378,9 @@ class MultimodalDataset(Dataset):
                         else:
                             logger.warning(f"Audio format not supported: {type(audio_data)}")
                     except Exception as e:
-                        logger.warning(f"Audio processing error: {e}")
-                        # Continue without audio
+                        logger.warning(f"Audio processing error (skipping audio): {e}")
+                        # Continue without audio - don't fail the entire sample
+                        pass
             
             # Handle image data
             if dataset_config.get("has_image", False):
