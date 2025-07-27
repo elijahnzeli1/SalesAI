@@ -21,6 +21,10 @@ except ImportError as e:
     print(f"⚠️  TorchAudio not available: {e}")
     TORCHAUDIO_AVAILABLE = False
     torchaudio = None
+except Exception as e:
+    print(f"⚠️  TorchAudio import error: {e}")
+    TORCHAUDIO_AVAILABLE = False
+    torchaudio = None
 
 # Import PIL with error handling
 try:

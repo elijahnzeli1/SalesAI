@@ -5,7 +5,8 @@ import logging
 
 from config import SalesAConfig
 from tokenizer import SalesATokenizer
-from data.dataset import MultimodalDataset
+# Remove the direct import to avoid circular import
+# from data.dataset import MultimodalDataset
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +133,9 @@ def create_multimodal_dataloaders(
     task_type: Optional[str] = None
 ) -> tuple[DataLoader, DataLoader]:
     """Create train and validation dataloaders"""
+    
+    # Lazy import to avoid circular import
+    from data.dataset import MultimodalDataset
 
     # Create datasets
     train_dataset = MultimodalDataset(
