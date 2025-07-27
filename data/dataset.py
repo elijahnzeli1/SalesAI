@@ -18,8 +18,13 @@ from collections import deque
 import threading
 import time
 
-# Disable TorchCodec to avoid compatibility issues
-os.environ['TORCHCODEC_DISABLE'] = '1'
+# Conditionally disable TorchCodec only if not properly installed
+try:
+    import torchcodec
+    os.environ['TORCHCODEC_DISABLE'] = '0'  # Enable if available
+except ImportError:
+    os.environ['TORCHCODEC_DISABLE'] = '1'  # Disable if not available
+    print("⚠️  TorchCodec not available - audio processing will be limited")
 
 from config import SalesAConfig
 from tokenizer import SalesATokenizer
@@ -125,13 +130,13 @@ class MultimodalDataset(Dataset):
                 "config": None,
                 "has_image": False,  # Images are not included in HF dataset - need separate compilation
                 "has_text": True,
-                "has_audio": False,  # Disabled audio to avoid TorchCodec issues
+                "has_audio": True,  # Re-enabled audio processing
                 "image_key": "image",
                 "audio_key": "audio",
                 "text_key": "text",
                 "limit": 2000 if self.split == "train" else 500,
                 "max_samples": 1500,
-                "note": "LUMA text-only mode to avoid TorchCodec compatibility issues"
+                "note": "LUMA multimodal dataset with audio+text processing"
             },
             "open_platypus": {
                 "name": "garage-bAInd/Open-Platypus",
@@ -170,10 +175,10 @@ class MultimodalDataset(Dataset):
                 "note": "Audio-visual question answering dataset"
             },
             "beans": {
-                "name": "beans",  # This should be the correct HF dataset name
+                "name": "beans",
                 "config": None,
                 "has_image": True,
-                "has_text": True,  # Changed to True - beans has text labels
+                "has_text": True,  # Beans has text labels
                 "has_audio": False,
                 "image_key": "image",
                 "text_key": "label",  # This is the text label for classification
@@ -364,19 +369,29 @@ class MultimodalDataset(Dataset):
                         logger.warning(f"Text processing error: {e}")
                         return None
             
-            # Handle audio data with fallback
+            # Handle audio data with improved processing
             if dataset_config.get("has_audio", False):
                 audio_key = dataset_config.get("audio_key", "audio")
                 if audio_key in item:
                     try:
                         audio_data = item[audio_key]
-                        # Skip audio processing if torchcodec is not available
+                        
+                        # Handle different audio formats
                         if hasattr(audio_data, 'array'):
+                            # AudioArray format
                             processed_item["audio"] = audio_data.array
+                        elif hasattr(audio_data, 'numpy'):
+                            # Convert to numpy array
+                            processed_item["audio"] = audio_data.numpy()
                         elif isinstance(audio_data, (list, tuple)):
+                            # List/tuple format
                             processed_item["audio"] = np.array(audio_data)
+                        elif isinstance(audio_data, np.ndarray):
+                            # Already numpy array
+                            processed_item["audio"] = audio_data
                         else:
                             logger.warning(f"Audio format not supported: {type(audio_data)}")
+                            
                     except Exception as e:
                         logger.warning(f"Audio processing error (skipping audio): {e}")
                         # Continue without audio - don't fail the entire sample
