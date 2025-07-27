@@ -13,15 +13,6 @@ from pathlib import Path
 from huggingface_hub import snapshot_download
 from datasets import load_dataset, IterableDataset
 
-# Import torchvision with error handling to avoid circular imports
-try:
-    import torchvision.transforms as transforms
-    TORCHVISION_AVAILABLE = True
-except ImportError as e:
-    print(f"⚠️  TorchVision not available: {e}")
-    TORCHVISION_AVAILABLE = False
-    transforms = None
-
 # Import torchaudio with error handling
 try:
     import torchaudio
@@ -445,7 +436,18 @@ class MultimodalDataset(Dataset):
                             # Handle tensor/array format
                             processed_item["image"] = image_data
                         else:
-                            logger.warning(f"Image format not supported: {type(image_data)}")
+                            # Try to import torchvision locally if needed
+                            try:
+                                import torchvision.transforms as transforms
+                                # If we get here, torchvision is available
+                                if hasattr(image_data, 'convert'):
+                                    processed_item["image"] = image_data
+                                else:
+                                    logger.warning(f"Image format not supported: {type(image_data)}")
+                            except ImportError:
+                                logger.warning(f"TorchVision not available, skipping image processing")
+                            except Exception as e:
+                                logger.warning(f"Image processing error: {e}")
                     except Exception as e:
                         logger.warning(f"Image processing error: {e}")
                         # Continue without image
