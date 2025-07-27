@@ -46,9 +46,17 @@ class SalesATokenizer:
                 # Convert dict to list format
                 vocab_list = list(vocab.keys())
                 self.vocab = vocab_list[:vocab_size]
-            else:
+            elif isinstance(vocab, list):
                 # Handle list format
-                self.vocab = vocab[:vocab_size] if isinstance(vocab, list) else list(vocab)[:vocab_size]
+                self.vocab = vocab[:vocab_size]
+            else:
+                # Handle other formats by converting to list
+                try:
+                    vocab_list = list(vocab)
+                    self.vocab = vocab_list[:vocab_size]
+                except Exception:
+                    # Fallback to default vocab
+                    self.vocab = list(self.enc._mergeable_ranks.keys())[:vocab_size]
         else:
             self.vocab = list(self.enc._mergeable_ranks.keys())[:vocab_size]
         self.token_to_id = {token: i for i, token in enumerate(self.vocab)}

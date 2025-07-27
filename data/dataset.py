@@ -167,7 +167,7 @@ class MultimodalDataset(Dataset):
                 "note": "Audio-visual question answering dataset"
             },
             "beans": {
-                "name": "beans",
+                "name": "beans",  # This should be the correct HF dataset name
                 "config": None,
                 "has_image": True,
                 "has_text": True,  # Changed to True - beans has text labels
