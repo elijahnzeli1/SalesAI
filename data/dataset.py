@@ -170,10 +170,11 @@ class MultimodalDataset(Dataset):
                 "name": "beans",
                 "config": None,
                 "has_image": True,
-                "has_text": False,
+                "has_text": True,  # Changed to True - beans has text labels
                 "has_audio": False,
                 "image_key": "image",
-                "text_key": "label",
+                "text_key": "label",  # This is the text label for classification
+                "labels_key": "label",  # Add labels_key for consistency
                 "limit": 1000 if self.split == "train" else 200,
                 "max_samples": 1000,
                 "note": "Image classification dataset for bean disease detection"
@@ -247,6 +248,9 @@ class MultimodalDataset(Dataset):
                 split_to_use = "test"
             elif dataset_config['name'] == "garage-bAInd/Open-Platypus" and self.split == "validation":
                  split_to_use = "train"
+            elif dataset_config['name'] == "beans" and self.split == "validation":
+                logger.warning("Beans dataset doesn't have validation split. Using test split instead.")
+                split_to_use = "test"
             else:
                 split_to_use = self.split
 
