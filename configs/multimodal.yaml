@@ -1,33 +1,65 @@
-# Multimodal training configuration
+# Multimodal training configuration for AGI-like model
 extends: base.yaml
 
 model:
-  name: "SalesA AI - Multimodal"
-  num_layers: 12
-  hidden_dim: 1024
-  num_experts: 16  # More experts for modality-specific processing
+  name: "SalesA AI - Multimodal AGI"
+  num_layers: 16  # Deeper for better representation learning
+  hidden_dim: 1024  # Larger hidden dimension
+  num_heads: 16  # More attention heads
+  intermediate_dim: 4096  # Larger intermediate dimension
+  num_experts: 32  # More experts for specialized processing
+  top_k: 4  # Use more experts per token
   
   # Enhanced multimodal dimensions
-  vision_dim: 384  # Larger vision patches
+  vision_dim: 384  # Larger vision patches for better detail
   audio_dim: 128  # Higher audio resolution
   vision_patch_size: 14
   audio_patch_size: 2
+  max_seq_len: 4096  # Longer sequences for complex reasoning
 
 training:
   batch_size: 2  # Smaller batch due to multiple modalities
-  learning_rate: 1.0e-4
-  num_epochs: 25
-  gradient_accumulation_steps: 8  # Effective batch size of 16
+  learning_rate: 5.0e-5  # Lower learning rate for stability
+  weight_decay: 1.0e-4  # Slightly higher weight decay
+  num_epochs: 50  # More epochs for convergence
+  gradient_accumulation_steps: 16  # Effective batch size of 32
   use_mixed_precision: true  # Enable AMP for GPU training
+  gradient_clip_norm: 1.0  # Gradient clipping for stability
+  
+  # Advanced training features
+  warmup_steps: 1000
+  cosine_schedule: true
+  label_smoothing: 0.1
 
 data:
-  dataset_name: ["luma", "clotho_aqa", "beans"]  # Mix of modalities
+  dataset_name: ["luma", "clotho_aqa", "beans", "prosocial_dialog", "humaneval"]  # Diverse dataset mix
   task_type: "multimodal"
-  max_text_length: 1024
-  max_audio_length: 32000  # 2 seconds at 16kHz
+  max_text_length: 2048  # Longer text sequences
+  max_audio_length: 64000  # 4 seconds at 16kHz
   num_workers: 4  # More workers for multimodal processing
   
   # Additional multimodal settings
   vision_augment: true
   audio_augment: true
-  text_augment: true 
+  text_augment: true
+  
+  # Modality-specific settings
+  text_dropout: 0.1
+  vision_dropout: 0.2
+  audio_dropout: 0.15
+
+rl:
+  # Enhanced RL training parameters
+  num_episodes: 1000  # More episodes for better learning
+  buffer_capacity: 10000  # Larger replay buffer
+  memory_capacity: 500  # Larger episodic memory
+  gamma: 0.99
+  epsilon: 0.1  # Lower epsilon for more exploitation
+  curiosity_bonus: 0.05  # Reduced curiosity bonus
+  update_target_every: 10  # More frequent target updates
+  
+  # Advanced RL features
+  double_dqn: true
+  dueling_dqn: true
+  prioritized_replay: true
+  n_step_returns: 3 

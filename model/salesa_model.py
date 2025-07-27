@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 import numpy as np
 
 from config import SalesAConfig
@@ -21,6 +21,11 @@ class SalesAModel(nn.Module):
         self.vision_encoder = VisionEncoder(config)
         self.audio_encoder = AudioEncoder(config)
 
+        # Modality projection layers to align dimensions
+        self.text_projection = nn.Linear(config.hidden_dim, config.hidden_dim)
+        self.vision_projection = nn.Linear(config.hidden_dim, config.hidden_dim)
+        self.audio_projection = nn.Linear(config.hidden_dim, config.hidden_dim)
+
         # Transformer layers
         self.transformer_blocks = nn.ModuleList([
             TransformerBlock(config) for _ in range(config.num_layers)
@@ -32,6 +37,11 @@ class SalesAModel(nn.Module):
         self.audio_head = nn.Linear(config.hidden_dim, config.vocab_size)   # For audio-to-text
         self.code_head = nn.Linear(config.hidden_dim, config.vocab_size)
         self.action_head = nn.Linear(config.hidden_dim, config.action_dim)  # For robotics actions
+
+        # Modality embeddings
+        self.text_modality_embedding = nn.Parameter(torch.randn(1, 1, config.hidden_dim))
+        self.vision_modality_embedding = nn.Parameter(torch.randn(1, 1, config.hidden_dim))
+        self.audio_modality_embedding = nn.Parameter(torch.randn(1, 1, config.hidden_dim))
 
         # TTS integration (placeholder, can be replaced with real TTS model)
         self.tts = None  # Placeholder for TTS module
@@ -50,6 +60,75 @@ class SalesAModel(nn.Module):
         elif isinstance(module, nn.LayerNorm):
             torch.nn.init.ones_(module.weight)
             torch.nn.init.zeros_(module.bias)
+
+    def _create_attention_mask(self, input_ids: Optional[torch.Tensor] = None,
+                             images: Optional[torch.Tensor] = None,
+                             audio: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Create attention mask for variable-length sequences"""
+        batch_size = 1
+        if input_ids is not None:
+            batch_size = input_ids.shape[0]
+        elif images is not None:
+            batch_size = images.shape[0]
+        elif audio is not None:
+            batch_size = audio.shape[0]
+
+        # Calculate sequence lengths for each modality
+        text_len = input_ids.shape[1] if input_ids is not None else 0
+        vision_len = images.shape[1] if images is not None else 0
+        audio_len = audio.shape[1] if audio is not None else 0
+        
+        total_len = text_len + vision_len + audio_len
+        
+        # If no inputs, return empty mask
+        if total_len == 0:
+            return torch.tensor([], device=next(self.parameters()).device)
+        
+        # Create causal mask (lower triangular)
+        mask = torch.tril(torch.ones(batch_size, total_len, total_len, device=next(self.parameters()).device))
+        
+        return mask
+
+    def _create_modality_info(self, input_ids: Optional[torch.Tensor] = None,
+                            images: Optional[torch.Tensor] = None,
+                            audio: Optional[torch.Tensor] = None) -> torch.Tensor:
+        """Create modality information tensor for cross-modal attention"""
+        modality_info = []
+        
+        if input_ids is not None:
+            text_len = input_ids.shape[1]
+            modality_info.extend([0] * text_len)  # 0 for text
+        
+        if images is not None:
+            vision_len = images.shape[1]
+            modality_info.extend([1] * vision_len)  # 1 for vision
+        
+        if audio is not None:
+            audio_len = audio.shape[1]
+            modality_info.extend([2] * audio_len)  # 2 for audio
+        
+        if not modality_info:
+            return torch.tensor([], dtype=torch.long, device=next(self.parameters()).device)
+        
+        # Create tensor with proper batch dimension
+        modality_tensor = torch.tensor(modality_info, dtype=torch.long, device=next(self.parameters()).device)
+        
+        # Determine batch size
+        batch_size = 1
+        if input_ids is not None:
+            batch_size = input_ids.shape[0]
+        elif images is not None:
+            batch_size = images.shape[0]
+        elif audio is not None:
+            batch_size = audio.shape[0]
+        
+        # Expand to match batch size
+        if batch_size > 1:
+            modality_tensor = modality_tensor.unsqueeze(0).expand(batch_size, -1)
+        else:
+            modality_tensor = modality_tensor.unsqueeze(0)
+        
+        return modality_tensor
 
     def forward(self,
                 input_ids: Optional[torch.Tensor] = None,
@@ -73,18 +152,28 @@ class SalesAModel(nn.Module):
         """
         # Encode inputs based on modality
         embeddings = []
+        modality_info = []
 
         if input_ids is not None:
             text_embeddings = self.text_encoder(input_ids)
+            text_embeddings = self.text_projection(text_embeddings)
+            text_embeddings = text_embeddings + self.text_modality_embedding
             embeddings.append(text_embeddings)
+            modality_info.extend([0] * text_embeddings.shape[1])
 
         if images is not None:
             vision_embeddings = self.vision_encoder(images)
+            vision_embeddings = self.vision_projection(vision_embeddings)
+            vision_embeddings = vision_embeddings + self.vision_modality_embedding
             embeddings.append(vision_embeddings)
+            modality_info.extend([1] * vision_embeddings.shape[1])
 
         if audio is not None:
             audio_embeddings = self.audio_encoder(audio)
+            audio_embeddings = self.audio_projection(audio_embeddings)
+            audio_embeddings = audio_embeddings + self.audio_modality_embedding
             embeddings.append(audio_embeddings)
+            modality_info.extend([2] * audio_embeddings.shape[1])
 
         # Concatenate all embeddings
         if len(embeddings) == 1:
@@ -92,9 +181,26 @@ class SalesAModel(nn.Module):
         else:
             x = torch.cat(embeddings, dim=1)
 
+        # Create attention mask and modality info AFTER concatenation
+        # This ensures the mask matches the actual sequence length
+        batch_size, seq_len, _ = x.shape
+        
+        attention_mask = torch.tril(torch.ones(batch_size, seq_len, seq_len, device=x.device))
+        
+        # Create modality tensor with proper dimensions
+        modality_tensor = torch.tensor(modality_info, dtype=torch.long, device=x.device)
+        if batch_size > 1:
+            modality_tensor = modality_tensor.unsqueeze(0).expand(batch_size, -1)
+        else:
+            modality_tensor = modality_tensor.unsqueeze(0)
+
         # Pass through transformer blocks
+        total_load_balance_loss = 0.0
         for block in self.transformer_blocks:
-            x = block(x)
+            x = block(x, attention_mask, modality_tensor)
+            # Accumulate load balancing loss from MoE layers
+            if hasattr(block.moe, 'get_load_balancing_loss'):
+                total_load_balance_loss += block.moe.get_load_balancing_loss()
 
         # Generate outputs based on task type
         if task_type == "text":
@@ -118,11 +224,16 @@ class SalesAModel(nn.Module):
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), action_labels.view(-1))
             elif labels is not None:
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1))
+            
+            # Add load balancing loss
+            if total_load_balance_loss > 0:
+                loss = loss + 0.01 * total_load_balance_loss  # Weight factor for load balancing
 
         return {
             "logits": logits,
             "loss": loss,
-            "hidden_states": x
+            "hidden_states": x,
+            "load_balance_loss": total_load_balance_loss
         }
 
     def tts_generate(self, text: str) -> bytes:
@@ -134,48 +245,34 @@ class SalesAModel(nn.Module):
         waveform = np.zeros(int(sr * duration), dtype=np.float32)  # Silence
         return waveform.tobytes()
 
-    def generate(self,
-                 input_ids: torch.Tensor,
-                 max_length: int = 100,
-                 temperature: float = 0.7,
-                 do_sample: bool = True,
-                 top_k: int = 50) -> torch.Tensor:
-        """Generate text using the model"""
+    def generate(self, input_ids: torch.Tensor, max_length: int = 100, temperature: float = 1.0) -> torch.Tensor:
+        """Generate text using greedy decoding"""
         self.eval()
-        generated = input_ids.clone()
-
         with torch.no_grad():
-            for _ in range(max_length):
-                # Get model predictions
-                outputs = self.forward(generated, task_type="text")
-                logits = outputs["logits"][:, -1, :]  # Get last token predictions
-
-                # Apply temperature
-                logits = logits / temperature
-
-                # Sample next token
-                if do_sample:
-                    # Top-k sampling
-                    if top_k > 0:
-                        top_k_logits, top_k_indices = torch.topk(logits, top_k)
-                        probs = F.softmax(top_k_logits, dim=-1)
-                        next_token_idx = torch.multinomial(probs, 1)
-                        next_token = top_k_indices.gather(1, next_token_idx)
-                    else:
-                        probs = F.softmax(logits, dim=-1)
-                        next_token = torch.multinomial(probs, 1)
-                else:
-                    # Greedy decoding
-                    next_token = torch.argmax(logits, dim=-1, keepdim=True)
-
-                # Append to generated sequence
-                generated = torch.cat([generated, next_token], dim=1)
-
-                # Stop if we generate end token (assuming 2 is end token)
-                if next_token.item() == 2:
+            current_ids = input_ids.clone()
+            
+            for _ in range(max_length - input_ids.shape[1]):
+                # Forward pass
+                outputs = self(input_ids=current_ids, task_type="text")
+                logits = outputs["logits"]
+                
+                # Get next token (greedy decoding)
+                next_token_logits = logits[:, -1, :] / temperature
+                next_token = torch.argmax(next_token_logits, dim=-1)
+                
+                # Check for end of sequence token (assuming token ID 2 is EOS)
+                if next_token.item() == 2:  # EOS token
                     break
-
-        return generated
+                
+                # Append next token
+                current_ids = torch.cat([current_ids, next_token.unsqueeze(-1)], dim=-1)
+                
+                # Check if we've reached max length
+                if current_ids.shape[1] >= max_length:
+                    break
+        
+        self.train()
+        return current_ids
 
     def get_name(self):
         return self.model_name

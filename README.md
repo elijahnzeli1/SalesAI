@@ -1,177 +1,310 @@
----
-language:
-- en
-license: apache-2.0
-datasets:
-- atrost/financial_phrasebank
-- allenai/prosocial-dialog
-- AI-Lab-Makerere/beans
-- garage-bAInd/Open-Platypus
-metrics:
-- accuracy
-- f1
-- precision
-- recall
-model-index:
-- name: SalesA AI
-  results:
-  - task:
-      type: text-classification
-    dataset:
-      name: financial_phrasebank
-      type: atrost/financial_phrasebank
-    metrics:
-    - type: accuracy
-      value: 0.85
-    - type: f1
-      value: 0.83
-tags:
-- art
----
+# SalesA AI - Multimodal AGI-like Model
 
-## **Model Name with Parameters**
+A **unified multimodal generative AI system** designed to learn and adapt across multiple modalities (text, audio, vision, robotics) with minimal data and long-term autonomy through reinforcement learning.
 
-**SalesA AI 125M — Multimodal Mixture-of-Experts Transformer**
+## 🚀 **Vision**
 
-- **Full Name Example:**  
-  `SalesA AI 125M (MoE, Multimodal, N.E.N & SalesA Team)`
+SalesA AI is not just another transformer—it's a **foundational AGI seed** designed to evolve autonomously. The goal is to create a system that can:
 
-- **Breakdown:**
-  - **SalesA AI**: Your model’s brand/architecture.
-  - **125M**: Number of parameters (from your logs: `Total parameters: 125,106,858` ≈ 125M).
-  - **MoE**: Mixture-of-Experts.
-  - **Multimodal**: Handles text, vision, audio, code, action.
-  - **Author**: N.E.N (Nthuku Elijah Nzeli) and SalesA Team.
+- **Learn across modalities** with minimal supervision
+- **Improve performance autonomously** through reinforcement learning
+- **Adapt to new tasks** without extensive retraining
+- **Scale efficiently** from small to large models
 
----
+## 🏗️ **Architecture Overview**
 
-  **Created by N.E.N (Nthuku Elijah Nzeli) and SalesA Team**
+### **Core Components**
 
-  - Model architecture: `SalesAModel`
-  - Library: Custom (see included code)
-  - Parameters: 125M
-  - Modalities: Text, Vision, Audio, Code, Action/Robotics
-  - MoE: Yes
+1. **Multimodal Encoders**
+   - **Text Encoder**: Token embeddings with positional encoding
+   - **Vision Encoder**: Patch-based image processing (ViT-style)
+   - **Audio Encoder**: 1D convolutional audio processing
 
-  This repository contains the SalesA AI model, a modular, extensible, and efficient multimodal transformer with Mixture-of-Experts (MoE) layers.
-  ```
+2. **Unified Transformer Backbone**
+   - **Cross-modal attention** with modality-specific weights
+   - **Mixture of Experts (MoE)** for computational efficiency
+   - **Load balancing** to ensure even expert utilization
 
----
+3. **Reinforcement Learning Agent**
+   - **DQN with dueling architecture** for better value estimation
+   - **Prioritized experience replay** for sample efficiency
+   - **Episodic memory** for novelty detection and meta-learning
+   - **Meta-learning** for rapid task adaptation
 
-## **Why This Naming Convention?**
+### **Key Features**
 
-- **Clarity:** Users immediately know the model’s size and capabilities.
-- **Discoverability:** Easy to search/filter on Hugging Face and other platforms.
-- **Professionalism:** Follows conventions used by top models (e.g., “Qwen2.5-7B-Minivoc-32k” [source](https://huggingface.co/kaitchup/Qwen2.5-7B-Minivoc-32k-v0.1a), “distilbert-base-uncased” [source](https://huggingface.co/distilbert-base-uncased)).
+- **Modality Alignment**: Learned projections align different input types
+- **Cross-modal Attention**: Specialized attention weights for modality interactions
+- **Autonomous Learning**: RL agent continuously improves performance
+- **Efficient Training**: MoE architecture reduces computational requirements
+- **Scalable Design**: Architecture scales from small to large models
 
----
+## 📦 **Installation**
 
-## **Summary Table**
+```bash
+# Clone the repository
+git clone <repository-url>
+cd SalesAI
 
-| Field         | Value                                      |
-|---------------|--------------------------------------------|
-| Model Name    | SalesA AI 125M                             |
-| Architecture  | Multimodal Mixture-of-Experts Transformer  |
-| Parameters    | 125M                                       |
-| Author        | N.E.N (Nthuku Elijah Nzeli) and SalesA Team|
+# Install dependencies
+pip install -r requirements.txt
 
----
-
-> **SalesA AI 125M — Multimodal Mixture-of-Experts Transformer**  
-> **Created by N.E.N (Nthuku Elijah Nzeli) and SalesA Team**
-
-
-This repository contains the SalesA AI model, a modular, extensible, and efficient multimodal transformer with Mixture-of-Experts (MoE) layers. It supports text, vision, audio, code, and action/robotics tasks.
-
-- Model architecture: `SalesAModel`
-- Library: Custom (see included code)
-- Author: N.E.N (Nthuku Elijah Nzeli) and SalesA Team
-
-## Model Description
-
-SalesA AI is a lightweight, CPU-optimized, multimodal model with a Mixture-of-Experts (MoE) architecture. It supports:
-- **Text generation & classification** (including financial sentiment)
-- **Vision (image-to-text, classification)**
-- **Audio (audio-to-text, classification)**
-- **Code generation**
-- **Action prediction for robotics/locomotion**
-- **Ethical and bias-aware outputs**
-
-The model is designed for extensibility, ethical deployment, and real-world applications in finance, sales, stock/market analysis, and robotics.
-
-## Intended Uses & Limitations
-
-### Intended Uses
-- Financial news and sentiment analysis
-- Sales and market trend analysis
-- General text, vision, and audio tasks
-- Code generation and completion
-- Robotics: action/command prediction from multimodal input
-- Research and educational use
-
-### Limitations
-- Not suitable for high-stakes financial decisions without human oversight
-- May not generalize to all languages or domains
-- Biases may exist in training data; see bias analysis plots
-- Not for commercial use without review (see license)
-
-## Datasets Used
-- [atrost/financial_phrasebank](https://huggingface.co/datasets/atrost/financial_phrasebank) (financial sentiment)
-- [allenai/prosocial-dialog](https://huggingface.co/datasets/allenai/prosocial-dialog) (dialogue)
-- [AI-Lab-Makerere/beans](https://huggingface.co/datasets/AI-Lab-Makerere/beans) (vision)
-- [garage-bAInd/Open-Platypus](https://huggingface.co/datasets/garage-bAInd/Open-Platypus) (instruction following)
-
-## Training Details
-- **Architecture:** Mixture-of-Experts (MoE), multimodal encoders (text, vision, audio)
-- **Parameters:** ~125M
-- **Hardware:** CPU-optimized, trainable on commodity hardware
-- **Losses:** Cross-entropy for classification/generation, multitask loss
-- **Optimizer:** AdamW
-- **Batch size:** 4 (default)
-- **Epochs:** 10 (default)
-
-## Evaluation Results
-- **Financial sentiment (accuracy):** 0.85
-- **Financial sentiment (F1):** 0.83
-- **General text/vision/audio:** See per-task metrics in training logs
-- **Bias/diagnostic plots:** See `confusion_matrix.png`, `class_distribution.png`, `per_class_metrics.png` in the model directory
-
-## Ethical Considerations & Bias Analysis
-- Model includes bias and diagnostic visualizations for transparency
-- Not for use in applications requiring guaranteed fairness or absence of bias
-- See [Hugging Face Model Card Guide](https://huggingface.co/docs/hub/model-cards) for best practices
-
-## Files Included
-- `model.safetensors`: Model weights
-- `config.json`: Model configuration
-- `tokenizer.json`, `vocab.json`, `tokenizer.model`: Tokenizer files
-- `merge.txt`: Tokenizer merges (placeholder)
-- `generation_config.json`: Generation parameters
-- `model.safetensors.index.json`: Index for sharded weights (placeholder)
-- `chat_template.jinja`: Chat UI template (placeholder)
-- `training_history.pkl`: Training history
-- `confusion_matrix.png`, `class_distribution.png`, `per_class_metrics.png`: Diagnostic plots
-
-## How to Use
-```python
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
-# Or use your custom loading code for SalesA AI
+# For GPU support (optional)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 ```
 
-## Citation
-If you use this model, please cite:
-```bibtex
-@article{Malo2014GoodDO,
-  title={Good debt or bad debt: Detecting semantic orientations in economic texts},
-  author={P. Malo and A. Sinha and P. Korhonen and J. Wallenius and P. Takala},
-  journal={Journal of the Association for Information Science and Technology},
-  year={2014},
-  volume={65}
+## 🎯 **Quick Start**
+
+### **Basic Training**
+
+```bash
+# Train with base configuration
+python main.py --config base
+
+# Train multimodal model
+python main.py --config multimodal
+
+# Train with reinforcement learning
+python main.py --config multimodal --skip-rl false
+```
+
+### **Advanced Training**
+
+```bash
+# Train code generation model
+python main.py --config code_generation
+
+# Train with custom configuration
+python main.py --config custom_config.yaml
+```
+
+## 🔧 **Configuration**
+
+The system uses YAML configuration files for different training scenarios:
+
+### **Available Configurations**
+
+- `base.yaml`: Basic model for CPU training
+- `multimodal.yaml`: Enhanced multimodal training
+- `code_generation.yaml`: Specialized for code generation
+- `text_generation.yaml`: Text-only training
+- `rl_training.yaml`: Reinforcement learning focus
+
+### **Key Parameters**
+
+```yaml
+model:
+  hidden_dim: 1024          # Hidden dimension size
+  num_layers: 16           # Number of transformer layers
+  num_experts: 32          # Number of MoE experts
+  top_k: 4                 # Experts per token
+
+training:
+  batch_size: 2            # Batch size
+  learning_rate: 5.0e-5    # Learning rate
+  num_epochs: 50           # Training epochs
+  gradient_accumulation_steps: 16  # Effective batch size
+
+rl:
+  num_episodes: 1000       # RL training episodes
+  buffer_capacity: 10000   # Replay buffer size
+  curiosity_bonus: 0.05    # Intrinsic motivation
+```
+
+## 🧠 **Model Capabilities**
+
+### **Multimodal Processing**
+
+```python
+from model.salesa_model import SalesAModel
+from config import SalesAConfig
+
+# Initialize model
+config = SalesAConfig()
+model = SalesAModel(config)
+
+# Text generation
+text_output = model.generate(input_ids, max_length=100)
+
+# Vision-to-text
+vision_output = model(images=image_tensor, task_type="vision")
+
+# Audio-to-text
+audio_output = model(audio=audio_tensor, task_type="audio")
+
+# Multimodal fusion
+multimodal_output = model(
+    input_ids=text_tokens,
+    images=image_tensor,
+    audio=audio_tensor,
+    task_type="multimodal"
+)
+```
+
+### **Reinforcement Learning**
+
+```python
+from rl.agent import DQNAgent, SimpleTextEnv
+
+# Initialize RL agent
+agent = DQNAgent(model, tokenizer, n_actions=10)
+
+# Train in environment
+env = SimpleTextEnv()
+for episode in range(100):
+    metrics = agent.train_episode(env)
+    print(f"Episode {episode}: Reward = {metrics['reward']:.2f}")
+```
+
+## 🔬 **Advanced Features**
+
+### **Meta-Learning**
+
+The system includes meta-learning capabilities for rapid adaptation:
+
+```python
+# Meta-learning adaptation
+agent.meta_learner.adapt_to_task(task_examples, adaptation_steps=5)
+
+# Task similarity detection
+similarity = agent.meta_learner.get_task_similarity(current_task)
+```
+
+### **Episodic Memory**
+
+Enhanced memory system for novelty detection:
+
+```python
+# Check for novel states
+is_novel = agent.episodic_memory.is_novel(state, embedding)
+
+# Retrieve similar experiences
+similar_experiences = agent.episodic_memory.get_similar_experiences(embedding)
+```
+
+### **Load Balancing**
+
+MoE load balancing ensures efficient expert utilization:
+
+```python
+# Get load balancing loss
+load_balance_loss = model.transformer_blocks[0].moe.get_load_balancing_loss()
+
+# Reset usage statistics
+model.transformer_blocks[0].moe.reset_usage_stats()
+```
+
+## 📊 **Training Monitoring**
+
+The training system provides comprehensive monitoring:
+
+```python
+# Training metrics
+{
+    "val_loss": 2.345,
+    "val_load_balance_loss": 0.123,
+    "val_accuracy": 0.856,
+    "val_perplexity": 15.67
+}
+
+# RL metrics
+{
+    "reward": 45.2,
+    "avg_loss": 0.234,
+    "memory_size": 156,
+    "buffer_size": 5432,
+    "episode_length": 23
 }
 ```
 
-## License
-apache-2.0
+## 🚀 **Autonomy Strategy**
 
-## Contact
-For questions or commercial licensing, contact the [SalesA Team](elijahnzeli924@gmail.com).
+### **Self-Improvement Mechanisms**
+
+1. **Intrinsic Motivation**: Curiosity-driven exploration
+2. **Meta-Learning**: Rapid adaptation to new tasks
+3. **Episodic Memory**: Novelty detection and experience retrieval
+4. **Load Balancing**: Efficient resource utilization
+5. **Cross-modal Learning**: Knowledge transfer between modalities
+
+### **Long-term Autonomy**
+
+- **Continuous Learning**: RL agent never stops improving
+- **Task Generalization**: Meta-learning enables new task adaptation
+- **Resource Efficiency**: MoE architecture scales efficiently
+- **Modality Transfer**: Knowledge learned in one modality applies to others
+
+## 🔧 **Customization**
+
+### **Adding New Modalities**
+
+```python
+class CustomEncoder(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        # Your encoder implementation
+        
+    def forward(self, x):
+        # Your forward pass
+        return embeddings
+
+# Add to model
+model.custom_encoder = CustomEncoder(config)
+```
+
+### **Custom Environments**
+
+```python
+class CustomEnvironment(AGIEnvironment):
+    def reset(self):
+        # Reset environment
+        return observation
+        
+    def step(self, action):
+        # Take action
+        return next_obs, reward, done, info
+```
+
+## 📈 **Performance Optimization**
+
+### **CPU Optimization**
+
+- Gradient checkpointing enabled by default
+- Efficient MoE implementation
+- Optimized data loading
+
+### **GPU Acceleration**
+
+- Mixed precision training support
+- CUDA-optimized operations
+- Memory-efficient attention
+
+### **Scaling Strategies**
+
+- **Data Parallel**: Multi-GPU training
+- **Model Parallel**: Large model distribution
+- **Pipeline Parallel**: Layer-wise distribution
+
+## 🤝 **Contributing**
+
+We welcome contributions to improve the AGI-like capabilities:
+
+1. **Architecture Improvements**: Better multimodal fusion
+2. **RL Enhancements**: More sophisticated exploration strategies
+3. **Meta-Learning**: Advanced few-shot learning techniques
+4. **Evaluation**: Better metrics and benchmarks
+
+## 📄 **License**
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 **Acknowledgments**
+
+- Inspired by GPT-4o's multimodal capabilities
+- Built on PyTorch and Hugging Face ecosystem
+- MoE implementation based on Switch Transformers
+- RL components inspired by modern deep RL research
+
+---
+
+**Built with ❤️ for advancing AGI research**

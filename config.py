@@ -28,6 +28,11 @@ class SalesAConfig:
     learning_rate: float = 1e-4
     weight_decay: float = 1e-5
     dropout_rate: float = 0.1
+    num_epochs: int = 10   # Number of training epochs
+    early_stopping_patience: int = 3  # Early stopping patience
+    gradient_accumulation_steps: int = 1  # Gradient accumulation steps
+    gradient_clip_norm: float = 1.0  # Gradient clipping norm
+    warmup_steps: int = 1000  # Learning rate warmup steps
 
     # Optimization for CPU
     use_mixed_precision: bool = False  # CPU doesn't support AMP well
@@ -44,4 +49,8 @@ class SalesAConfig:
     def __post_init__(self):
         """Validate configuration"""
         assert self.hidden_dim % self.num_heads == 0, "hidden_dim must be divisible by num_heads"
-        assert self.top_k <= self.num_experts, "top_k must be <= num_experts" 
+        assert self.top_k <= self.num_experts, "top_k must be <= num_experts"
+
+    def get(self, key, default=None):
+        """Get configuration value with default fallback"""
+        return getattr(self, key, default) 
