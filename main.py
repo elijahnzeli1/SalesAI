@@ -32,10 +32,14 @@ def init_model(config) -> tuple[SalesAModel, SalesATokenizer]:
     """Initialize model and tokenizer"""
     logger.info("Initializing model and tokenizer...")
     
+    # Convert complex config to simple config for model
+    from config_adapter import adapt_config
+    simple_config = adapt_config(config)
+    
     # Create raw dataset for vocabulary building
     raw_train_dataset = MultimodalDataset(
         config=config,
-        tokenizer=SalesATokenizer(vocab_size=config.model.vocab_size),
+        tokenizer=SalesATokenizer(vocab_size=simple_config.vocab_size),
         split="train",
         dataset_name=config.data.dataset_name
     )
@@ -43,17 +47,17 @@ def init_model(config) -> tuple[SalesAModel, SalesATokenizer]:
     # Build vocabulary
     vocab, enc = build_vocab_with_tiktoken(
         raw_train_dataset.data,
-        vocab_size=config.model.vocab_size,
+        vocab_size=simple_config.vocab_size,
         model_name="gpt2"
     )
     tokenizer = SalesATokenizer(
-        vocab_size=config.model.vocab_size,
+        vocab_size=simple_config.vocab_size,
         vocab=vocab,
         enc=enc
     )
 
-    # Initialize model
-    model = SalesAModel(config)
+    # Initialize model with simple config
+    model = SalesAModel(simple_config)
 
     return model, tokenizer
 
