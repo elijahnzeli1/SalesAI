@@ -47,9 +47,9 @@ class CosineAnnealingWarmupRestarts:
 
 class SalesATrainer:
     """Enhanced trainer class for SalesA AI model with advanced features"""
-    def __init__(self, config: SalesAConfig):
+    def __init__(self, config: SalesAConfig, model: Optional[SalesAModel] = None):
         self.config = config
-        self.model = SalesAModel(config)
+        self.model = model if model is not None else SalesAModel(config)
         self.optimizer = optim.AdamW(
             self.model.parameters(),
             lr=config.learning_rate,

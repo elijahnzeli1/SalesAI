@@ -65,9 +65,12 @@ def train_model(config, model: SalesAModel, tokenizer: SalesATokenizer):
     """Train the model"""
     logger.info("Setting up training...")
 
-    # Create trainer
-    trainer = SalesATrainer(config)
-    trainer.model = model  # Use initialized model
+    # Convert complex config to simple config for trainer
+    from config_adapter import adapt_config
+    simple_config = adapt_config(config)
+
+    # Create trainer with simple config and initialized model
+    trainer = SalesATrainer(simple_config, model)
 
     # Create dataloaders
     train_loader, val_loader = create_multimodal_dataloaders(

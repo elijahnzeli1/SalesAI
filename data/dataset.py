@@ -451,7 +451,22 @@ class MultimodalDataset(Dataset):
                     label_data = item[labels_key]
                     if isinstance(label_data, bytes):
                         label_data = label_data.decode('utf-8', errors='ignore')
-                    processed_item["labels"] = str(label_data)
+                    
+                    # Try to preserve numeric labels as numbers
+                    if isinstance(label_data, (int, float)):
+                        processed_item["labels"] = label_data
+                    elif isinstance(label_data, str):
+                        # Try to convert string to number if possible
+                        try:
+                            if '.' in label_data:
+                                processed_item["labels"] = float(label_data)
+                            else:
+                                processed_item["labels"] = int(label_data)
+                        except (ValueError, TypeError):
+                            # Keep as string if conversion fails
+                            processed_item["labels"] = label_data
+                    else:
+                        processed_item["labels"] = label_data
                 except (UnicodeDecodeError, AttributeError) as e:
                     logger.warning(f"Label processing error: {e}")
             

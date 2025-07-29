@@ -117,6 +117,26 @@ class SalesAConfig:
     model_name: str = "SalesA AI"  # <-- Add this line
     model_author: str = "Created by N.E.N (Nthuku Elijah Nzeli) and SalesA Team"
     vocab_size: int = 32000
+    hidden_dim: int = 512
+    num_layers: int = 8
+    num_heads: int = 8
+    intermediate_dim: int = 1024
+    max_seq_len: int = 2048
+    num_experts: int = 4
+    expert_capacity: int = 2
+    top_k: int = 2
+    vision_dim: int = 224
+    audio_dim: int = 80
+    vision_patch_size: int = 16
+    audio_patch_size: int = 4
+    batch_size: int = 4
+    learning_rate: float = 1e-4
+    weight_decay: float = 1e-5
+    dropout_rate: float = 0.1
+    num_epochs: int = 10
+    early_stopping_patience: int = 3
+    gradient_accumulation_steps: int = 1
+
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     data: DataConfig = field(default_factory=DataConfig)

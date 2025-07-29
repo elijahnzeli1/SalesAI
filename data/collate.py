@@ -73,8 +73,22 @@ def collate_fn(batch: List[Dict]) -> Dict[str, torch.Tensor]:
                         labels = labels[:max_len]
                     batch_dict["labels"].append(labels)
             else:
-                # Convert to tensor if not already
-                batch_dict["labels"].append(torch.tensor(item["labels"]))
+                # Handle different label types
+                label_data = item["labels"]
+                if isinstance(label_data, str):
+                    # For string labels, try to convert to numeric or use a hash
+                    try:
+                        # Try to convert to float/int first
+                        numeric_label = float(label_data)
+                        batch_dict["labels"].append(torch.tensor([numeric_label], dtype=torch.float))
+                    except (ValueError, TypeError):
+                        # If conversion fails, use a hash of the string
+                        import hashlib
+                        hash_value = int(hashlib.md5(label_data.encode()).hexdigest()[:8], 16) % 1000
+                        batch_dict["labels"].append(torch.tensor([hash_value], dtype=torch.long))
+                else:
+                    # Convert to tensor if not already
+                    batch_dict["labels"].append(torch.tensor(label_data))
 
         # Process action labels
         if item.get("action_labels") is not None:
