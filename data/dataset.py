@@ -188,20 +188,7 @@ class MultimodalDataset(Dataset):
                 "limit": 1000 if self.split == "train" else 200,
                 "max_samples": 2000
             },
-            # Add missing dataset configurations
-            "clotho_aqa": {
-                "name": "m-a-p/CLOTHO-AQA",
-                "config": None,
-                "has_image": False,
-                "has_text": True,
-                "has_audio": True,
-                "audio_key": "audio",
-                "text_key": "question",
-                "answer_key": "answer",
-                "limit": 1000 if self.split == "train" else 200,
-                "max_samples": 1000,
-                "note": "Audio-visual question answering dataset"
-            },
+            # vision + text
             "beans": {
                 "name": "beans",
                 "config": None,
@@ -215,6 +202,7 @@ class MultimodalDataset(Dataset):
                 "max_samples": 1000,
                 "note": "Image classification dataset for bean disease detection"
             },
+            #text only
             "prosocial_dialog": {
                 "name": "allenai/prosocial-dialog",
                 "config": None,

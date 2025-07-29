@@ -114,14 +114,20 @@ class MoELayer(nn.Module):
     def get_load_balancing_loss(self) -> torch.Tensor:
         """Calculate load balancing loss to encourage even expert usage"""
         if self.expert_usage.sum() == 0:
-            return torch.tensor(0.0, device=self.expert_usage.device)
+            return torch.tensor(0.0, device=self.expert_usage.device, requires_grad=True)
             
-        usage_normalized = self.expert_usage / (self.expert_usage.sum() + 1e-8)
-        mean_usage = usage_normalized.mean()
-        std_usage = usage_normalized.std()
+        # Normalize usage counts
+        usage_normalized = self.expert_usage.float() / (self.expert_usage.sum().float() + 1e-8)
         
-        # Coefficient of variation squared
-        load_balance_loss = (std_usage / (mean_usage + 1e-8)) ** 2
+        # Target uniform distribution
+        target_usage = torch.full_like(usage_normalized, 1.0 / self.num_experts)
+        
+        # KL divergence for load balancing
+        load_balance_loss = F.kl_div(
+            usage_normalized.log() + 1e-8, 
+            target_usage, 
+            reduction='batchmean'
+        )
         
         return load_balance_loss
 

@@ -114,6 +114,9 @@ class PathConfig:
 @dataclass
 class SalesAConfig:
     """Main configuration class for SalesA AI"""
+    model_name: str = "SalesA AI"  # <-- Add this line
+    model_author: str = "Created by N.E.N (Nthuku Elijah Nzeli) and SalesA Team"
+    vocab_size: int = 32000
     model: ModelConfig = field(default_factory=ModelConfig)
     training: TrainingConfig = field(default_factory=TrainingConfig)
     data: DataConfig = field(default_factory=DataConfig)
@@ -182,4 +185,4 @@ def load_config(scenario: str = "base") -> SalesAConfig:
         logger.warning(f"Configuration file {config_file} not found, using base config")
         config_file = config_dir / "base.yaml"
         
-    return SalesAConfig.from_yaml(str(config_file)) 
+    return SalesAConfig.from_yaml(str(config_file))

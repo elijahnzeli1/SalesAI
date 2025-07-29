@@ -33,19 +33,19 @@ class VisionEncoder(nn.Module):
             3 * config.vision_patch_size * config.vision_patch_size,
             config.hidden_dim
         )
+        # Fixed: Use only num_patches for positional embeddings (no CLS token for multimodal)
         self.pos_embedding = nn.Parameter(
-            torch.randn(1, self.num_patches + 1, config.hidden_dim)
+            torch.randn(1, self.num_patches, config.hidden_dim)
         )
-        self.cls_token = nn.Parameter(torch.randn(1, 1, config.hidden_dim))
+        self.dropout = nn.Dropout(config.dropout_rate)
 
     def forward(self, images: torch.Tensor) -> torch.Tensor:
         batch_size = images.shape[0]
         patches = self.extract_patches(images)
         patch_embeddings = self.patch_projection(patches)
-        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
-        embeddings = torch.cat([cls_tokens, patch_embeddings], dim=1)
-        embeddings = embeddings + self.pos_embedding
-        return embeddings
+        # Add positional embeddings directly to patch embeddings
+        embeddings = patch_embeddings + self.pos_embedding
+        return self.dropout(embeddings)
 
     def extract_patches(self, images: torch.Tensor) -> torch.Tensor:
         batch_size, channels, height, width = images.shape
@@ -74,6 +74,6 @@ class AudioEncoder(nn.Module):
         x = audio.unsqueeze(1)
         for conv in self.conv1d_layers:
             x = F.relu(conv(x))
-        x = x.transpose(1, 2)
-        x = self.projection(x)
-        return x 
+        x = x.mean(dim=-1)  # Flatten over time dimension
+        x = self.projection(x).unsqueeze(1)  # Add sequence dimension
+        return x

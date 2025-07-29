@@ -32,7 +32,7 @@ training:
   label_smoothing: 0.1
 
 data:
-  dataset_name: ["luma", "clotho_aqa", "beans", "prosocial_dialog", "humaneval"]  # Diverse dataset mix
+  dataset_name: ["luma", "beans", "prosocial_dialog", "humaneval"]  # Diverse dataset mix
   task_type: "multimodal"
   max_text_length: 2048  # Longer text sequences
   max_audio_length: 64000  # 4 seconds at 16kHz

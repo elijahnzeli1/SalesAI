@@ -83,30 +83,10 @@ class MultiHeadAttention(nn.Module):
         # Apply attention to values
         context = torch.matmul(attention_weights, v)
 
-        # Concatenate heads - fix the reshaping
+        # Concatenate heads - simplified and correct reshaping
         # context shape: [batch_size, num_heads, seq_len, head_dim]
-        context = context.transpose(1, 2).contiguous()
-        # Now context shape: [batch_size, seq_len, num_heads, head_dim]
-        
-        # Calculate the correct size for reshaping
-        total_size = context.numel()
-        expected_size = batch_size * seq_len * self.hidden_dim
-        
-        if total_size != expected_size:
-            # If sizes don't match, reshape to the correct size
-            context = context.view(batch_size, seq_len, -1)
-            # Ensure the last dimension matches hidden_dim
-            if context.size(-1) != self.hidden_dim:
-                # Pad or truncate to match hidden_dim
-                if context.size(-1) < self.hidden_dim:
-                    # Pad with zeros
-                    pad_size = self.hidden_dim - context.size(-1)
-                    context = torch.cat([context, torch.zeros(batch_size, seq_len, pad_size, device=context.device)], dim=-1)
-                else:
-                    # Truncate
-                    context = context[:, :, :self.hidden_dim]
-        else:
-            context = context.view(batch_size, seq_len, self.hidden_dim)
+        context = context.transpose(1, 2).contiguous()  # [batch_size, seq_len, num_heads, head_dim]
+        context = context.view(batch_size, seq_len, self.hidden_dim)  # [batch_size, seq_len, hidden_dim]
 
         # Output projection
         output = self.output(context)

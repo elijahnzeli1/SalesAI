@@ -57,17 +57,9 @@ class SalesATrainer:
             betas=(0.9, 0.999)
         )
         
-        # Learning rate scheduler
-        total_steps = config.num_epochs * 1000  # Estimate total steps
-        self.scheduler = CosineAnnealingWarmupRestarts(
-            self.optimizer,
-            first_cycle_steps=total_steps // 4,
-            cycle_mult=1.0,
-            max_lr=config.learning_rate,
-            min_lr=config.learning_rate * 0.01,
-            warmup_steps=config.get('warmup_steps', 1000),
-            gamma=0.5
-        )
+        # Learning rate scheduler with proper initialization
+        self.scheduler = None  # Will be initialized when training starts
+        self.total_steps = 0  # Will be set during training
         
         self.gradient_accumulation_steps = config.get('gradient_accumulation_steps', 1)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -216,6 +208,19 @@ class SalesATrainer:
     def train(self, train_loader: DataLoader, val_loader: Optional[DataLoader] = None,
              num_epochs: int = 10, early_stopping_patience: int = 3):
         """Full training loop with validation and early stopping"""
+        # Initialize scheduler with proper total steps
+        if self.scheduler is None:
+            self.total_steps = num_epochs * len(train_loader)
+            self.scheduler = CosineAnnealingWarmupRestarts(
+                self.optimizer,
+                first_cycle_steps=self.total_steps // 4,
+                cycle_mult=1.0,
+                max_lr=self.config.learning_rate,
+                min_lr=self.config.learning_rate * 0.01,
+                warmup_steps=self.config.get('warmup_steps', 1000),
+                gamma=0.5
+            )
+        
         best_val_loss = float('inf')
         patience_counter = 0
         early_stopping_patience = self.config.get('early_stopping_patience', early_stopping_patience)
