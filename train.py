@@ -26,23 +26,33 @@ class CosineAnnealingWarmupRestarts:
         self.gamma = gamma
         self.cur_cycle_steps = first_cycle_steps
         self.cycle = 0
+        self.last_epoch = last_epoch
+        self.step_count = 0  # Track actual step count
         self.step(last_epoch + 1)
 
     def step(self, epoch=None):
         if epoch is None:
-            epoch = self.last_epoch + 1
+            self.step_count += 1
+            epoch = self.step_count
+        else:
+            self.step_count = epoch
         self.last_epoch = epoch
 
         for param_group in self.optimizer.param_groups:
             if epoch < self.warmup_steps:
-                lr = self.max_lr * (epoch / self.warmup_steps)
+                # Ensure we start with a small but non-zero learning rate
+                if epoch == 0:
+                    lr = self.max_lr * 0.01  # Start with 1% of max LR
+                else:
+                    lr = self.max_lr * (epoch / self.warmup_steps)
             else:
-                lr = self.min_lr + (self.max_lr - self.min_lr) * (1 + math.cos(math.pi * (epoch - self.warmup_steps) / self.cur_cycle_steps)) / 2
+                effective_epoch = epoch - self.warmup_steps
+                effective_cycle_steps = self.cur_cycle_steps - self.warmup_steps
+                lr = self.min_lr + (self.max_lr - self.min_lr) * (1 + math.cos(math.pi * effective_epoch / effective_cycle_steps)) / 2
             param_group['lr'] = lr
 
-        if epoch == self.cur_cycle_steps:
+        if epoch >= self.cur_cycle_steps:
             self.cycle += 1
-            epoch = epoch - self.cur_cycle_steps
             self.cur_cycle_steps = int((self.cur_cycle_steps - self.warmup_steps) * self.cycle_mult) + self.warmup_steps
 
 class SalesATrainer:

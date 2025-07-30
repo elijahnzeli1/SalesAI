@@ -59,21 +59,64 @@ class VisionEncoder(nn.Module):
         return patches
 
 class AudioEncoder(nn.Module):
-    """Audio encoder using 1D convolutions"""
+    """Audio encoder using 1D convolutions with improved processing"""
     def __init__(self, config: SalesAConfig):
         super().__init__()
         self.config = config
+        
+        # Improved CNN architecture for audio processing
         self.conv1d_layers = nn.ModuleList([
-            nn.Conv1d(1, 64, kernel_size=3, stride=2, padding=1),
-            nn.Conv1d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.Conv1d(128, 256, kernel_size=3, stride=2, padding=1),
+            nn.Sequential(
+                nn.Conv1d(1, 64, kernel_size=7, stride=2, padding=3),
+                nn.BatchNorm1d(64),
+                nn.ReLU(inplace=True),
+                nn.Dropout(config.dropout_rate)
+            ),
+            nn.Sequential(
+                nn.Conv1d(64, 128, kernel_size=5, stride=2, padding=2),
+                nn.BatchNorm1d(128),
+                nn.ReLU(inplace=True),
+                nn.Dropout(config.dropout_rate)
+            ),
+            nn.Sequential(
+                nn.Conv1d(128, 256, kernel_size=3, stride=2, padding=1),
+                nn.BatchNorm1d(256),
+                nn.ReLU(inplace=True),
+                nn.Dropout(config.dropout_rate)
+            ),
         ])
-        self.projection = nn.Linear(256, config.hidden_dim)
+        
+        # Projection layers for better feature alignment
+        self.pre_projection = nn.Linear(256, 512)
+        self.projection = nn.Linear(512, config.hidden_dim)
+        self.layer_norm = nn.LayerNorm(config.hidden_dim)
+        self.dropout = nn.Dropout(config.dropout_rate)
 
     def forward(self, audio: torch.Tensor) -> torch.Tensor:
-        x = audio.unsqueeze(1)
-        for conv in self.conv1d_layers:
-            x = F.relu(conv(x))
-        x = x.mean(dim=-1)  # Flatten over time dimension
-        x = self.projection(x).unsqueeze(1)  # Add sequence dimension
+        # Handle different input shapes
+        if len(audio.shape) == 1:
+            audio = audio.unsqueeze(0)  # Add batch dimension
+        if len(audio.shape) == 2:
+            audio = audio.unsqueeze(1)  # Add channel dimension
+        
+        x = audio
+        
+        # Apply CNN layers
+        for conv_layer in self.conv1d_layers:
+            x = conv_layer(x)
+        
+        # Global pooling to get fixed-size representation
+        x = F.adaptive_avg_pool1d(x, 1).squeeze(-1)  # (batch_size, 256)
+        
+        # Feature transformation
+        x = F.relu(self.pre_projection(x))
+        x = self.projection(x)
+        x = self.layer_norm(x)
+        x = self.dropout(x)
+        
+        # Add sequence dimension for consistency with other encoders
+        # Match the sequence length of text encoder (which can vary)
+        # For now, we'll create a fixed sequence of length 1
+        x = x.unsqueeze(1)  # (batch_size, 1, hidden_dim)
+        
         return x

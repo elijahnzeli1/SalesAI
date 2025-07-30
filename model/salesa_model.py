@@ -70,83 +70,19 @@ class SalesAModel(nn.Module):
             torch.nn.init.ones_(module.weight)
             torch.nn.init.zeros_(module.bias)
 
-    def _create_attention_mask(self, input_ids: Optional[torch.Tensor] = None,
-                             images: Optional[torch.Tensor] = None,
-                             audio: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Create attention mask for variable-length sequences"""
-        batch_size = 1
-        if input_ids is not None:
-            batch_size = input_ids.shape[0]
-        elif images is not None:
-            batch_size = images.shape[0]
-        elif audio is not None:
-            batch_size = audio.shape[0]
-
-        # Calculate sequence lengths for each modality
-        text_len = input_ids.shape[1] if input_ids is not None else 0
-        vision_len = images.shape[1] if images is not None else 0
-        audio_len = audio.shape[1] if audio is not None else 0
-        
-        total_len = text_len + vision_len + audio_len
-        
-        # If no inputs, return empty mask
-        if total_len == 0:
-            return torch.tensor([], device=next(self.parameters()).device)
-        
-        # Create causal mask (lower triangular)
-        mask = torch.tril(torch.ones(batch_size, total_len, total_len, device=next(self.parameters()).device))
-        
-        return mask
-
-    def _create_modality_info(self, input_ids: Optional[torch.Tensor] = None,
-                            images: Optional[torch.Tensor] = None,
-                            audio: Optional[torch.Tensor] = None) -> torch.Tensor:
-        """Create modality information tensor for cross-modal attention"""
-        modality_info = []
-        
-        if input_ids is not None:
-            text_len = input_ids.shape[1]
-            modality_info.extend([0] * text_len)  # 0 for text
-        
-        if images is not None:
-            vision_len = images.shape[1]
-            modality_info.extend([1] * vision_len)  # 1 for vision
-        
-        if audio is not None:
-            audio_len = audio.shape[1]
-            modality_info.extend([2] * audio_len)  # 2 for audio
-        
-        if not modality_info:
-            return torch.tensor([], dtype=torch.long, device=next(self.parameters()).device)
-        
-        # Create tensor with proper batch dimension
-        modality_tensor = torch.tensor(modality_info, dtype=torch.long, device=next(self.parameters()).device)
-        
-        # Determine batch size
-        batch_size = 1
-        if input_ids is not None:
-            batch_size = input_ids.shape[0]
-        elif images is not None:
-            batch_size = images.shape[0]
-        elif audio is not None:
-            batch_size = audio.shape[0]
-        
-        # Expand to match batch size
-        if batch_size > 1:
-            modality_tensor = modality_tensor.unsqueeze(0).expand(batch_size, -1)
-        else:
-            modality_tensor = modality_tensor.unsqueeze(0)
-        
-        return modality_tensor
 
     def forward(self,
                 input_ids: Optional[torch.Tensor] = None,
+                text: Optional[torch.Tensor] = None,
+                image: Optional[torch.Tensor] = None,
                 images: Optional[torch.Tensor] = None,
                 audio: Optional[torch.Tensor] = None,
+                attention_mask: Optional[torch.Tensor] = None,
                 task_type: str = "text",
                 return_loss: bool = False,
                 labels: Optional[torch.Tensor] = None,
-                action_labels: Optional[torch.Tensor] = None) -> Dict[str, Any]:
+                action_labels: Optional[torch.Tensor] = None,
+                **kwargs) -> Dict[str, Any]:
         """
         Forward pass through SalesA AI
 
@@ -159,6 +95,12 @@ class SalesAModel(nn.Module):
             labels: Ground truth labels for loss computation
             action_labels: Action labels for robotics tasks
         """
+        # Handle parameter mapping (text -> input_ids, image -> images)
+        if text is not None and input_ids is None:
+            input_ids = text
+        if image is not None and images is None:
+            images = image
+            
         # Encode inputs based on modality
         embeddings = []
         modality_info = []
@@ -184,10 +126,16 @@ class SalesAModel(nn.Module):
             embeddings.append(audio_embeddings)
             modality_info.extend([2] * audio_embeddings.shape[1])
 
-        # Concatenate all embeddings
+        # Concatenate all embeddings (handle different sequence lengths)
         if len(embeddings) == 1:
             x = embeddings[0]
         else:
+            # Check if all embeddings have the same batch size
+            batch_size = embeddings[0].shape[0]
+            for emb in embeddings[1:]:
+                if emb.shape[0] != batch_size:
+                    # Expand to match batch size if needed
+                    emb = emb.expand(batch_size, -1, -1)
             x = torch.cat(embeddings, dim=1)
 
         # Create attention mask and modality info AFTER concatenation
@@ -212,6 +160,10 @@ class SalesAModel(nn.Module):
                 total_load_balance_loss += block.moe.get_load_balancing_loss()
 
         # Generate outputs based on task type
+        # Use the first task type in the list for simplicity, since we are processing a batch
+        if isinstance(task_type, list):
+            task_type = task_type[0]
+        
         if task_type == "text":
             logits = self.text_head(x)
         elif task_type == "vision":
@@ -232,7 +184,12 @@ class SalesAModel(nn.Module):
                 # For discrete actions, use cross-entropy
                 loss = F.cross_entropy(logits.view(-1, logits.size(-1)), action_labels.view(-1))
             elif labels is not None:
-                loss = F.cross_entropy(logits.view(-1, logits.size(-1)), labels.view(-1))
+                # Shift logits and labels for next token prediction
+                shift_logits = logits[..., :-1, :].contiguous().view(-1, logits.size(-1))
+                shift_labels = labels[..., 1:].contiguous().view(-1)
+                
+                # Ignore padding tokens in loss calculation
+                loss = F.cross_entropy(shift_logits, shift_labels, ignore_index=-100)
             
             # Add load balancing loss
             if total_load_balance_loss > 0:

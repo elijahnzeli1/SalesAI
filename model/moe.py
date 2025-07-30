@@ -48,21 +48,30 @@ class Router(nn.Module):
         return gates, top_k_indices
 
 class MoELayer(nn.Module):
-    """Mixture of Experts layer with improved vectorized dispatch"""
+    """Mixture of Experts layer with improved vectorized dispatch and load balancing"""
     def __init__(self, config: SalesAConfig):
         super().__init__()
         self.config = config
         self.num_experts = config.num_experts
         self.top_k = config.top_k
+        self.hidden_dim = config.hidden_dim
+        
+        # Initialize experts
         self.experts = nn.ModuleList([
             Expert(config.hidden_dim, config.intermediate_dim, config.dropout_rate)
             for _ in range(config.num_experts)
         ])
         self.router = Router(config.hidden_dim, config.num_experts, config.top_k)
         
-        # Register expert usage tracking
+        # Register expert usage tracking for load balancing
         self.register_buffer('expert_usage', torch.zeros(config.num_experts))
+        self.register_buffer('expert_importance', torch.zeros(config.num_experts))
         self.expert_usage: torch.Tensor
+        self.expert_importance: torch.Tensor
+        
+        # Load balancing parameters
+        self.load_balance_weight = 0.01
+        self.importance_weight = 0.1
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -112,24 +121,34 @@ class MoELayer(nn.Module):
         return output_flat.view(B, S, D)
 
     def get_load_balancing_loss(self) -> torch.Tensor:
-        """Calculate load balancing loss to encourage even expert usage"""
+        """Calculate load balancing loss to encourage even expert usage and prioritize important experts"""
         if self.expert_usage.sum() == 0:
             return torch.tensor(0.0, device=self.expert_usage.device, requires_grad=True)
-            
-        # Normalize usage counts
-        usage_normalized = self.expert_usage.float() / (self.expert_usage.sum().float() + 1e-8)
         
-        # Target uniform distribution
-        target_usage = torch.full_like(usage_normalized, 1.0 / self.num_experts)
+        # Normalize usage counts to get distribution
+        usage_dist = self.expert_usage.float() / (self.expert_usage.sum().float() + 1e-8)
         
-        # KL divergence for load balancing
-        load_balance_loss = F.kl_div(
-            usage_normalized.log() + 1e-8, 
-            target_usage, 
+        # Importance-weighted load balancing loss (using KL divergence)
+        # We want to minimize the divergence between usage and a uniform distribution
+        # while giving more weight to important experts
+        importance_scores = F.softmax(self.expert_importance, dim=-1)
+        
+        # KL divergence between usage and uniform distribution
+        kl_div = F.kl_div(
+            (usage_dist + 1e-8).log(), 
+            torch.full_like(usage_dist, 1.0 / self.num_experts), 
             reduction='batchmean'
         )
         
-        return load_balance_loss
+        # Combine with importance weighting
+        load_balance_loss = self.load_balance_weight * kl_div * (1 + self.importance_weight * importance_scores.mean())
+        
+        # CV^2 loss for load balancing
+        cv_sq_loss = (usage_dist.std() / (usage_dist.mean() + 1e-8))**2
+        
+        # Total load balancing loss
+        total_loss = load_balance_loss + self.load_balance_weight * cv_sq_loss
+        return total_loss
 
     def reset_usage_stats(self):
         """Reset expert usage statistics"""

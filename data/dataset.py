@@ -153,18 +153,18 @@ class MultimodalDataset(Dataset):
         # Define available datasets with their configurations
         dataset_configs = {
             # Tri‑modal: image + audio + text
-            "luma": {
-                "name": "bezirganyan/LUMA",
-                "config": None,
-                "has_image": False,  # Images are not included in HF dataset - need separate compilation
-                "has_text": True,
-                "has_audio": True,  # Re-enabled audio processing
+            "minds14": {
+                "name": "PolyAI/minds14",
+                "config": "en-US",  # Specify language for audio data
+                "has_image": False,
+                "has_text": True,  # It has transcriptions
+                "has_audio": True,
                 "image_key": "image",
                 "audio_key": "audio",
-                "text_key": "text",
+                "text_key": "english_transcription",
                 "limit": 2000 if self.split == "train" else 500,
                 "max_samples": 1500,
-                "note": "LUMA multimodal dataset with audio+text processing"
+                "note": "Minds14 audio dataset with transcriptions"
             },
             "open_platypus": {
                 "name": "garage-bAInd/Open-Platypus",
@@ -226,7 +226,7 @@ class MultimodalDataset(Dataset):
                 elif self.task_type == "vision":
                     selected_datasets = ["beans"]
                 elif self.task_type == "audio":
-                    selected_datasets = ["luma"]
+                    selected_datasets = ["minds14"]
                 elif self.task_type in ["financial", "stock"]:
                     selected_datasets = ["financial_phrasebank"]
                 elif self.task_type == "text":
@@ -267,8 +267,8 @@ class MultimodalDataset(Dataset):
         """Create a streaming dataset wrapper"""
         try:
             # Handle special split cases
-            if dataset_config['name'] == "bezirganyan/LUMA" and self.split == "validation":
-                logger.warning("LUMA doesn't have validation split. Using test split instead.")
+            if dataset_config['name'] == "PolyAI/minds14" and self.split == "validation":
+                logger.warning("Minds14 doesn't have validation split. Using test split instead.")
                 split_to_use = "test"
             elif dataset_config['name'] == "garage-bAInd/Open-Platypus" and self.split == "validation":
                  split_to_use = "train"
@@ -499,14 +499,25 @@ class MultimodalDataset(Dataset):
 
         for i in range(num_samples):
             text_length = random.randint(10, 50)
-            text_tokens = torch.randint(1, self.config.vocab_size, (text_length,))
+            # Handle both simple and complex config formats
+            vocab_size = getattr(self.config, 'vocab_size', None)
+            if vocab_size is None:
+                vocab_size = getattr(self.config.model, 'vocab_size', 32000)
+            text_tokens = torch.randint(1, vocab_size, (text_length,))
 
             # Generate realistic image tensors
-            image = torch.randn(3, self.config.vision_dim, self.config.vision_dim)
+            vision_dim = getattr(self.config, 'vision_dim', None)
+            if vision_dim is None:
+                vision_dim = getattr(self.config.model, 'vision_dim', 224)
+            image = torch.randn(3, vision_dim, vision_dim)
             image = torch.clamp(image, -2, 2)  # Normalize range
 
             # Generate realistic audio
-            audio = torch.randn(self.config.max_audio_length) * 0.1
+            # Handle both simple and complex config formats
+            max_audio_length = getattr(self.config, 'max_audio_length', None)
+            if max_audio_length is None:
+                max_audio_length = getattr(self.config.data, 'max_audio_length', 16000)
+            audio = torch.randn(max_audio_length) * 0.1
 
             task_type = random.choice(["text", "vision", "audio", "vision_text", "audio_text"])
             labels = text_tokens.clone() if task_type in ["text", "vision_text", "audio_text"] else None
@@ -577,7 +588,11 @@ class MultimodalDataset(Dataset):
     def _generate_single_synthetic_sample(self):
         """Generate a single synthetic sample on-demand"""
         text_length = random.randint(10, 50)
-        text_tokens = torch.randint(1, self.config.vocab_size, (text_length,))
+        # Handle both simple and complex config formats
+        vocab_size = getattr(self.config, 'vocab_size', None)
+        if vocab_size is None:
+            vocab_size = getattr(self.config.model, 'vocab_size', 32000)
+        text_tokens = torch.randint(1, vocab_size, (text_length,))
         
         sample = {
             "text": text_tokens,

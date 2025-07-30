@@ -2,6 +2,7 @@ import torch
 import logging
 from pathlib import Path
 import argparse
+import json
 
 from utils.config import load_config
 from tokenizer import SalesATokenizer, build_vocab_with_tiktoken
@@ -152,24 +153,52 @@ def train_rl_agent(config, model: SalesAModel, tokenizer: SalesATokenizer):
     return agent
 
 def save_artifacts(config, model: SalesAModel, tokenizer: SalesATokenizer):
-    """Save model artifacts"""
+    """Save model artifacts in Hugging Face format"""
     export_dir = Path(config.paths.export_dir)
     logger.info(f"Saving artifacts to {export_dir}...")
-    
+
     # Create export directory
     export_dir.mkdir(parents=True, exist_ok=True)
 
-    # Save model
-    model_path = export_dir / "model.pt"
-    torch.save(model.state_dict(), model_path)
+    # Save model weights in .safetensors format
+    model_path = export_dir / "model.safetensors"
+    from safetensors.torch import save_file
+    save_file(model.state_dict(), model_path)
     logger.info(f"Model saved to {model_path}")
 
-    # Save tokenizer
-    tokenizer_path = export_dir / "tokenizer.json"
+    # Create model card
+    model_card = f"""--- 
+language: en
+license: mit
+library_name: transformers
+---
+
+# {config.model.name}
+
+**Model author:** {config.model.author}
+
+This model is a generative multimodal AI system designed for lifelong learning. It can process and generate text, images, and audio, and is built with a Mixture of Experts (MoE) architecture for efficient scaling.
+
+## Model Details
+
+- **Architecture:** Transformer-based with multimodal encoders and MoE.
+- **Vocab Size:** {config.model.vocab_size}
+- **Hidden Dimension:** {config.model.hidden_dim}
+- **Layers:** {config.model.num_layers}
+- **Heads:** {config.model.num_heads}
+
+"""
+    with open(export_dir / "README.md", "w") as f:
+        f.write(model_card)
+
+    # Save tokenizer configuration manually
     tokenizer_config = {
-        "vocab": tokenizer.vocab,
-        "token_to_id": tokenizer.token_to_id,
-        "id_to_token": tokenizer.id_to_token,
+        "vocab_size": tokenizer.vocab_size,
+        "model_max_length": 1024,
+        "tokenizer_class": "SalesATokenizer",
+        "vocab": tokenizer.vocab if hasattr(tokenizer, 'vocab') else {},
+        "token_to_id": tokenizer.token_to_id if hasattr(tokenizer, 'token_to_id') else {},
+        "id_to_token": tokenizer.id_to_token if hasattr(tokenizer, 'id_to_token') else {},
         "special_tokens": {
             "pad_token": tokenizer.pad_token,
             "unk_token": tokenizer.unk_token,
@@ -178,15 +207,81 @@ def save_artifacts(config, model: SalesAModel, tokenizer: SalesATokenizer):
             "code_token": tokenizer.code_token
         }
     }
-    import json
-    with open(tokenizer_path, "w") as f:
+    with open(export_dir / "tokenizer_config.json", "w") as f:
         json.dump(tokenizer_config, f, indent=2)
-    logger.info(f"Tokenizer saved to {tokenizer_path}")
+    
+    # Save special tokens map
+    special_tokens_map = {
+        "pad_token": tokenizer.pad_token,
+        "unk_token": tokenizer.unk_token,
+        "bos_token": tokenizer.bos_token,
+        "eos_token": tokenizer.eos_token
+    }
+    with open(export_dir / "special_tokens_map.json", "w") as f:
+        json.dump(special_tokens_map, f, indent=2)
 
-    # Save config
-    config_path = export_dir / "config.json"
-    config.save(config_path)
-    logger.info(f"Config saved to {config_path}")
+    # Save Hugging Face configuration
+    hf_config = {
+        "model_type": "sales-a",
+        "architectures": ["SalesAModel"],
+        "hidden_size": config.model.hidden_dim,
+        "num_attention_heads": config.model.num_heads,
+        "num_hidden_layers": config.model.num_layers,
+        "vocab_size": config.model.vocab_size,
+    }
+    with open(export_dir / "config.json", "w") as f:
+        json.dump(hf_config, f, indent=2)
+
+    # Create .gitattributes
+    with open(export_dir / ".gitattributes", "w") as f:
+        f.write("*.safetensors filter=lfs diff=lfs merge=lfs -text\n")
+        f.write("*.bin filter=lfs diff=lfs merge=lfs -text\n")
+    
+    # Create chat template
+    with open(export_dir / "chat_template.jinja", "w") as f:
+        f.write("{% for message in messages %}\n")
+        f.write("{% if message['role'] == 'user' %}{{ '<|user|>\n' + message['content'] + '\n' }}{% endif %}\n")
+        f.write("{% if message['role'] == 'assistant' %}{{ '<|assistant|>\n' + message['content'] + '\n' }}{% endif %}\n")
+        f.write("{% endfor %}{% if add_generation_prompt %}{{ '<|assistant|>\n' }}{% endif %}\n")
+    
+    # Create generation config
+    generation_config = {
+        "do_sample": True,
+        "temperature": 0.7,
+        "top_p": 0.9,
+        "top_k": 50,
+        "max_new_tokens": 512,
+        "repetition_penalty": 1.1,
+        "pad_token_id": 0,
+        "eos_token_id": 2,
+        "bos_token_id": 1
+    }
+    with open(export_dir / "generation_config.json", "w") as f:
+        json.dump(generation_config, f, indent=2)
+    
+    # Create processor config
+    processor_config = {
+        "image_processor_type": "VisionEncoder",
+        "audio_processor_type": "AudioEncoder",
+        "text_processor_type": "TextEncoder",
+        "multimodal": True
+    }
+    with open(export_dir / "processor_config.json", "w") as f:
+        json.dump(processor_config, f, indent=2)
+        
+    # Create preprocessor config
+    with open(export_dir / "preprocessor_config.json", "w") as f:
+        json.dump(processor_config, f, indent=2)
+        
+    # Create model index for safetensors
+    model_index = {
+        "metadata": {"total_size": 1024000000},
+        "weight_map": {"model": "model.safetensors"}
+    }
+    with open(export_dir / "model.safetensors.index.json", "w") as f:
+        json.dump(model_index, f, indent=2)
+
+    logger.info("All artifacts saved in Hugging Face format.")
 
 def main():
     """Main execution function"""
