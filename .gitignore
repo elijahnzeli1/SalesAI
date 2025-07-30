@@ -10,4 +10,6 @@ checkpoints/
 
 datasets/
 
+test_audio_processing.py
+
 training_logs.md

@@ -44,15 +44,36 @@ except ImportError as e:
     SOUNDFILE_AVAILABLE = False
     sf = None
 
+# Import our custom audio processor
+try:
+    from utils.audio_processor import AudioDatasetProcessor
+    AUDIO_PROCESSOR_AVAILABLE = True
+    print("✅ Custom audio processor available")
+except ImportError as e:
+    print(f"⚠️  Custom audio processor not available: {e}")
+    AUDIO_PROCESSOR_AVAILABLE = False
+
 # Conditionally disable TorchCodec only if not properly installed
 try:
     import torchcodec
-    os.environ['TORCHCODEC_DISABLE'] = '0'  # Enable if available
-    TORCHCODEC_AVAILABLE = True
+    # Test if torchcodec.decoders is available
+    try:
+        from torchcodec.decoders import AudioDecoder
+        os.environ['TORCHCODEC_DISABLE'] = '0'  # Enable if available
+        TORCHCODEC_AVAILABLE = True
+    except ImportError:
+        # torchcodec is installed but decoders module is missing
+        os.environ['TORCHCODEC_DISABLE'] = '1'  # Disable if decoders not available
+        TORCHCODEC_AVAILABLE = False
+        print("⚠️  TorchCodec decoders not available - using custom audio processor")
 except ImportError:
     os.environ['TORCHCODEC_DISABLE'] = '1'  # Disable if not available
     TORCHCODEC_AVAILABLE = False
-    print("⚠️  TorchCodec not available - audio processing will be limited")
+    print("⚠️  TorchCodec not available - using custom audio processor")
+except Exception as e:
+    os.environ['TORCHCODEC_DISABLE'] = '1'  # Disable on any error
+    TORCHCODEC_AVAILABLE = False
+    print(f"⚠️  TorchCodec error: {e} - using custom audio processor")
 
 from config import SalesAConfig
 from tokenizer import SalesATokenizer
@@ -137,11 +158,19 @@ class MultimodalDataset(Dataset):
         self.use_streaming = use_streaming
         self.cache_size = cache_size
         self.streaming_datasets = []
-        self.processed_samples = []
-        self.sample_count = 0
-        self.max_samples_per_dataset = 2000 if split == "train" else 500
         
-        # Initialize streaming datasets
+        # Initialize audio processor if available
+        if AUDIO_PROCESSOR_AVAILABLE:
+            self.audio_processor = AudioDatasetProcessor(sample_rate=16000)
+            self.audio_available = True
+        else:
+            self.audio_processor = None
+            self.audio_available = False
+        
+        # Set maximum samples per dataset
+        self.max_samples_per_dataset = getattr(config, 'max_samples_per_dataset', 1000)
+        
+        # Initialize datasets
         self._initialize_streaming_datasets()
         
         # Start prefetching for all streaming datasets
@@ -225,7 +254,12 @@ class MultimodalDataset(Dataset):
                 elif self.task_type == "vision":
                     selected_datasets = ["beans"]
                 elif self.task_type == "audio":
-                    selected_datasets = ["AnimeVox"]
+                    # Include audio datasets if custom processor is available
+                    if self.audio_available:
+                        selected_datasets = ["AnimeVox"]
+                    else:
+                        logger.warning("Audio task requested but audio processor not available. Using text dataset instead.")
+                        selected_datasets = ["open_platypus"]
                 elif self.task_type in ["financial", "stock"]:
                     selected_datasets = ["financial_phrasebank"]
                 elif self.task_type == "text":
@@ -236,11 +270,27 @@ class MultimodalDataset(Dataset):
                 # Fallback to general text dataset
                 selected_datasets = ["open_platypus"]
         elif self.dataset_name == "all":
-            selected_datasets = list(dataset_configs.keys())
+            # Include all datasets, including audio if processor is available
+            if self.audio_available:
+                selected_datasets = list(dataset_configs.keys())
+            else:
+                selected_datasets = [key for key in dataset_configs.keys() if key != "AnimeVox"]
+                logger.warning("Audio processor not available - excluding audio datasets from 'all' selection")
         elif isinstance(self.dataset_name, list):
-            selected_datasets = self.dataset_name
+            # Include audio datasets if processor is available
+            if self.audio_available:
+                selected_datasets = self.dataset_name
+            else:
+                selected_datasets = [name for name in self.dataset_name if name != "AnimeVox"]
+                if "AnimeVox" in self.dataset_name:
+                    logger.warning("Audio processor not available - excluding AnimeVox from dataset list")
         else:
-            selected_datasets = [self.dataset_name]
+            # Single dataset selection
+            if self.dataset_name == "AnimeVox" and not self.audio_available:
+                logger.warning("AnimeVox requested but audio processor not available. Using open_platypus instead.")
+                selected_datasets = ["open_platypus"]
+            else:
+                selected_datasets = [self.dataset_name]
 
         # Initialize streaming datasets
         for dataset_key in selected_datasets:
@@ -265,6 +315,11 @@ class MultimodalDataset(Dataset):
     def _create_streaming_dataset(self, dataset_config: Dict) -> Optional[StreamingDatasetWrapper]:
         """Create a streaming dataset wrapper"""
         try:
+            # Skip audio datasets only if no audio processor is available
+            if dataset_config['name'] == "taresh18/AnimeVox" and not self.audio_available:
+                logger.warning(f"Skipping {dataset_config['name']} - Audio processor not available for audio processing")
+                return None
+                
             # Handle special split cases
             if dataset_config['name'] == "taresh18/AnimeVox" and self.split == "validation":
                 logger.warning("AnimeVox doesn't have validation split. Using test split instead.")
@@ -317,6 +372,9 @@ class MultimodalDataset(Dataset):
 
         except Exception as e:
             logger.error(f"Error creating streaming dataset {dataset_config['name']}: {e}")
+            # If it's a torchcodec-related error, log it specifically
+            if "register_fake" in str(e) or "torchcodec" in str(e).lower():
+                logger.warning(f"Skipping {dataset_config['name']} due to TorchCodec compatibility issues")
             return None
 
     def _load_data(self) -> List[Dict]:
@@ -391,24 +449,32 @@ class MultimodalDataset(Dataset):
                     try:
                         audio_data = item[audio_key]
                         
-                        # Handle different audio formats
-                        if hasattr(audio_data, 'array'):
-                            # AudioArray format
-                            processed_item["audio"] = audio_data.array
-                        elif hasattr(audio_data, 'numpy'):
-                            # Convert to numpy array
-                            processed_item["audio"] = audio_data.numpy()
-                        elif isinstance(audio_data, (list, tuple)):
-                            # List/tuple format
-                            processed_item["audio"] = np.array(audio_data)
-                        elif isinstance(audio_data, np.ndarray):
-                            # Already numpy array
-                            processed_item["audio"] = audio_data
-                        elif isinstance(audio_data, torch.Tensor):
-                            # PyTorch tensor
-                            processed_item["audio"] = audio_data
+                        # Use our custom audio processor if available
+                        if self.audio_processor is not None:
+                            processed_audio = self.audio_processor.process_audio_sample(audio_data)
+                            if processed_audio is not None:
+                                processed_item["audio"] = processed_audio
+                            else:
+                                logger.warning("Audio processing failed - skipping audio")
                         else:
-                            logger.warning(f"Audio format not supported: {type(audio_data)}")
+                            # Fallback to basic audio handling
+                            if hasattr(audio_data, 'array'):
+                                # AudioArray format
+                                processed_item["audio"] = audio_data.array
+                            elif hasattr(audio_data, 'numpy'):
+                                # Convert to numpy array
+                                processed_item["audio"] = audio_data.numpy()
+                            elif isinstance(audio_data, (list, tuple)):
+                                # List/tuple format
+                                processed_item["audio"] = np.array(audio_data)
+                            elif isinstance(audio_data, np.ndarray):
+                                # Already numpy array
+                                processed_item["audio"] = audio_data
+                            elif isinstance(audio_data, torch.Tensor):
+                                # PyTorch tensor
+                                processed_item["audio"] = audio_data
+                            else:
+                                logger.warning(f"Audio format not supported: {type(audio_data)}")
                             
                     except Exception as e:
                         logger.warning(f"Audio processing error (skipping audio): {e}")
