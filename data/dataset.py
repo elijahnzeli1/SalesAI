@@ -92,12 +92,22 @@ class StreamingDatasetWrapper:
         self._iterator = None
         
     def start_prefetching(self):
-        """Start background prefetching of samples"""
+        """Start background prefetching of samples with timeout protection"""
         if self.prefetch_thread is None or not self.prefetch_thread.is_alive():
             self.stop_prefetch = False
             self.prefetch_thread = threading.Thread(target=self._prefetch_worker)
             self.prefetch_thread.daemon = True
             self.prefetch_thread.start()
+            
+            # Add a timeout mechanism to prevent hanging
+            def timeout_monitor():
+                time.sleep(30)  # Wait 30 seconds
+                if self.prefetch_thread.is_alive():
+                    logger.warning("Prefetch worker taking too long, stopping...")
+                    self.stop_prefetch = True
+            
+            timeout_thread = threading.Thread(target=timeout_monitor, daemon=True)
+            timeout_thread.start()
     
     def stop_prefetching(self):
         """Stop background prefetching"""
@@ -113,21 +123,52 @@ class StreamingDatasetWrapper:
                 for item in self.dataset:
                     if self.stop_prefetch:
                         break
-                    with self.cache_lock:
-                        if len(self.cache) < self.cache.maxlen:
-                            self.cache.append(item)
+                    try:
+                        # Try to process the item to catch any torchcodec errors early
+                        if hasattr(item, 'get') and item.get('audio') is not None:
+                            # Skip audio items that might cause torchcodec issues
+                            continue
+                        with self.cache_lock:
+                            if len(self.cache) < self.cache.maxlen:
+                                self.cache.append(item)
+                    except Exception as item_error:
+                        # Log but continue with other items
+                        if "register_fake" in str(item_error) or "torchcodec" in str(item_error).lower():
+                            logger.debug(f"Skipping audio item due to torchcodec issue: {item_error}")
+                            continue
+                        else:
+                            logger.warning(f"Error processing item in prefetch worker: {item_error}")
+                            continue
                     time.sleep(0.001)  # Small delay to prevent overwhelming
             else:
                 # Regular dataset
                 for item in self.dataset:
                     if self.stop_prefetch:
                         break
-                    with self.cache_lock:
-                        if len(self.cache) < self.cache.maxlen:
-                            self.cache.append(item)
+                    try:
+                        # Try to process the item to catch any torchcodec errors early
+                        if hasattr(item, 'get') and item.get('audio') is not None:
+                            # Skip audio items that might cause torchcodec issues
+                            continue
+                        with self.cache_lock:
+                            if len(self.cache) < self.cache.maxlen:
+                                self.cache.append(item)
+                    except Exception as item_error:
+                        # Log but continue with other items
+                        if "register_fake" in str(item_error) or "torchcodec" in str(item_error).lower():
+                            logger.debug(f"Skipping audio item due to torchcodec issue: {item_error}")
+                            continue
+                        else:
+                            logger.warning(f"Error processing item in prefetch worker: {item_error}")
+                            continue
                     time.sleep(0.001)  # Small delay to prevent overwhelming
         except Exception as e:
             logger.warning(f"Prefetch worker error: {e}")
+            # Don't let the error crash the entire process
+            if "register_fake" in str(e) or "torchcodec" in str(e).lower():
+                logger.warning("Prefetch worker stopped due to torchcodec compatibility issues")
+            else:
+                logger.warning("Prefetch worker stopped due to unexpected error")
     
     def __iter__(self):
         return self
@@ -160,13 +201,15 @@ class MultimodalDataset(Dataset):
         self.streaming_datasets = []
         self.processed_samples = []  # Add the missing attribute
         
-        # Initialize audio processor if available
-        if AUDIO_PROCESSOR_AVAILABLE:
+        # Initialize audio processor if available and torchcodec is working
+        if AUDIO_PROCESSOR_AVAILABLE and TORCHCODEC_AVAILABLE:
             self.audio_processor = AudioDatasetProcessor(sample_rate=16000)
             self.audio_available = True
         else:
             self.audio_processor = None
             self.audio_available = False
+            if not TORCHCODEC_AVAILABLE:
+                logger.warning("TorchCodec not available - disabling audio datasets to prevent compatibility issues")
         
         # Set maximum samples per dataset
         self.max_samples_per_dataset = getattr(config, 'max_samples_per_dataset', 1000)
@@ -174,9 +217,19 @@ class MultimodalDataset(Dataset):
         # Initialize datasets
         self._initialize_streaming_datasets()
         
-        # Start prefetching for all streaming datasets
+        # Start prefetching for all streaming datasets with delay for audio datasets
         for wrapper in self.streaming_datasets:
-            wrapper.start_prefetching()
+            # Delay prefetching for audio datasets to avoid torchcodec issues
+            if wrapper.dataset_config.get('has_audio', False):
+                def delayed_start(wrapper=wrapper):
+                    time.sleep(5)  # Wait 5 seconds before starting audio dataset prefetching
+                    if not wrapper.stop_prefetch:
+                        wrapper.start_prefetching()
+                
+                delay_thread = threading.Thread(target=delayed_start, daemon=True)
+                delay_thread.start()
+            else:
+                wrapper.start_prefetching()
 
     def _initialize_streaming_datasets(self):
         """Initialize streaming datasets without downloading"""
@@ -403,6 +456,11 @@ class MultimodalDataset(Dataset):
                 item = next(wrapper)
                 if item is None:
                     continue
+                
+                # Skip audio items that might cause torchcodec issues
+                if hasattr(item, 'get') and item.get('audio') is not None:
+                    logger.debug(f"Skipping audio item from {wrapper.dataset_config['name']} due to torchcodec compatibility")
+                    continue
                     
                 sample = self._process_sample(item, wrapper.dataset_config)
                 if sample:
@@ -412,7 +470,15 @@ class MultimodalDataset(Dataset):
                 # This dataset is exhausted
                 continue
             except Exception as e:
-                logger.warning(f"Error getting sample from {wrapper.dataset_config['name']}: {e}")
+                # Handle torchcodec errors gracefully
+                if "register_fake" in str(e) or "torchcodec" in str(e).lower():
+                    logger.warning(f"Skipping {wrapper.dataset_config['name']} due to torchcodec compatibility issues: {e}")
+                    # Mark this dataset as exhausted to avoid repeated errors
+                    wrapper.samples_processed = self.max_samples_per_dataset
+                    continue
+                else:
+                    logger.warning(f"Error getting sample from {wrapper.dataset_config['name']}: {e}")
+                    continue
                 continue
         
         return None
