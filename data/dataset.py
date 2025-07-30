@@ -58,7 +58,7 @@ try:
     import torchcodec
     # Test if torchcodec.decoders is available
     try:
-        from torchcodec.decoders import AudioDecoder
+        from torchcodec.decoders import AudioDecoder # type: ignore
         os.environ['TORCHCODEC_DISABLE'] = '0'  # Enable if available
         TORCHCODEC_AVAILABLE = True
     except ImportError:
