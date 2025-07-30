@@ -104,6 +104,18 @@ class RLConfig:
     max_steps_per_episode: int = 100
     reward_scale: float = 1.0
     use_intrinsic_reward: bool = True
+    
+    # Meta-learning parameters
+    meta_learning_rate: float = 0.1
+    task_adaptation_steps: int = 5
+    
+    # Curiosity and exploration
+    novelty_threshold: float = 0.1
+    exploration_bonus: float = 0.3
+    
+    # Multi-task learning
+    task_switching_frequency: int = 10
+    cross_task_knowledge_sharing: bool = True
 
 @dataclass
 class PathConfig:
