@@ -62,4 +62,22 @@ rl:
   double_dqn: true
   dueling_dqn: true
   prioritized_replay: true
-  n_step_returns: 3 
+  n_step_returns: 3
+  
+  # Enhanced learning parameters
+  env_type: "multimodal"  # Support for multiple environment types
+  max_steps_per_episode: 100  # Maximum steps per episode
+  reward_scale: 1.0  # Reward scaling factor
+  use_intrinsic_reward: true  # Enable intrinsic motivation
+  
+  # Meta-learning parameters
+  meta_learning_rate: 0.1
+  task_adaptation_steps: 5
+  
+  # Curiosity and exploration
+  novelty_threshold: 0.1
+  exploration_bonus: 0.3
+  
+  # Multi-task learning
+  task_switching_frequency: 10  # Switch tasks every N episodes
+  cross_task_knowledge_sharing: true 

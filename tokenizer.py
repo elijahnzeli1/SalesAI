@@ -1,6 +1,9 @@
 from typing import Optional, List, Union
 import tiktoken
 import torch
+import json
+import os
+from pathlib import Path
 
 # Domain-specific tokens
 EXTRA_TOKENS = [
@@ -36,6 +39,7 @@ class SalesATokenizer:
     """Tokenizer for SalesA AI using Tiktoken and extra domain tokens"""
     def __init__(self, vocab_size: int = 32000, vocab: Optional[Union[list, dict]] = None, enc=None, model_name: str = "gpt2"):
         self.vocab_size = vocab_size
+        self.model_name = model_name
         if enc is not None:
             self.enc = enc
         else:
@@ -115,11 +119,155 @@ class SalesATokenizer:
         """Map extra token IDs back to their string, otherwise use Tiktoken"""
         words = []
         for tid in token_ids:
-            if tid in self.id_to_token and self.id_to_token[tid].decode("utf-8") in EXTRA_TOKENS:
-                words.append(self.id_to_token[tid].decode("utf-8"))
+            if tid in self.id_to_token:
+                token = self.id_to_token[tid]
+                # Handle both bytes and string tokens
+                if isinstance(token, bytes):
+                    token_str = token.decode("utf-8", errors='replace')
+                else:
+                    token_str = str(token)
+                
+                # Check if it's an extra token
+                if token_str in EXTRA_TOKENS:
+                    words.append(token_str)
+                else:
+                    words.append(token_str)
             else:
                 try:
                     words.append(self.enc.decode([tid]))
                 except Exception:
                     words.append("<UNK>")
-        return " ".join(words) 
+        return " ".join(words)
+
+    def save_vocab_files(self, save_directory: str):
+        """Save vocabulary and merge files in Hugging Face format"""
+        save_directory = Path(save_directory)
+        save_directory.mkdir(parents=True, exist_ok=True)
+        
+        # Save vocab.json (token to id mapping)
+        vocab_dict = {}
+        for token in self.vocab:
+            if isinstance(token, bytes):
+                token_str = token.decode('utf-8', errors='replace')
+            else:
+                token_str = str(token)
+            vocab_dict[token_str] = self.token_to_id[token]
+        
+        with open(save_directory / "vocab.json", "w", encoding="utf-8") as f:
+            json.dump(vocab_dict, f, ensure_ascii=False, indent=2)
+        
+        # Save merges.txt (BPE merge rules)
+        merges = []
+        if hasattr(self.enc, '_mergeable_ranks'):
+            # Sort merges by rank (lower rank = higher priority)
+            sorted_merges = sorted(self.enc._mergeable_ranks.items(), key=lambda x: x[1])
+            for merge_pair, rank in sorted_merges:
+                if isinstance(merge_pair, bytes):
+                    # Split the merge pair into two parts
+                    # This is a simplified approach - actual BPE merges are more complex
+                    merge_str = merge_pair.decode('utf-8', errors='replace')
+                    if len(merge_str) >= 2:
+                        merges.append(f"{merge_str[0]} {merge_str[1:]}")
+                    else:
+                        merges.append(merge_str)
+        
+        with open(save_directory / "merges.txt", "w", encoding="utf-8") as f:
+            f.write("#version: 0.2\n")
+            for merge in merges:
+                f.write(f"{merge}\n")
+        
+        # Save tokenizer.json (complete tokenizer configuration)
+        tokenizer_config = {
+            "version": "1.0",
+            "truncation": None,
+            "padding": None,
+            "added_tokens": [
+                {"id": self.pad_token_id, "special": True, "content": self.pad_token},
+                {"id": self.unk_token_id, "special": True, "content": self.unk_token},
+                {"id": self.bos_token_id, "special": True, "content": self.bos_token},
+                {"id": self.eos_token_id, "special": True, "content": self.eos_token},
+                {"id": self.code_token_id, "special": True, "content": self.code_token}
+            ],
+            "normalizer": None,
+            "pre_tokenizer": None,
+            "post_processor": None,
+            "decoder": None,
+            "model": {
+                "type": "BPE",
+                "vocab": vocab_dict,
+                "merges": merges,
+                "cache_capacity": 1000,
+                "dropout": None,
+                "unk_token": self.unk_token,
+                "continuing_subword_prefix": "",
+                "end_of_word_suffix": "",
+                "fuse_unk": False
+            }
+        }
+        
+        with open(save_directory / "tokenizer.json", "w", encoding="utf-8") as f:
+            json.dump(tokenizer_config, f, ensure_ascii=False, indent=2)
+        
+        # Save special tokens map
+        special_tokens_map = {
+            "pad_token": self.pad_token,
+            "unk_token": self.unk_token,
+            "bos_token": self.bos_token,
+            "eos_token": self.eos_token,
+            "additional_special_tokens": [self.code_token] + EXTRA_TOKENS
+        }
+        
+        with open(save_directory / "special_tokens_map.json", "w", encoding="utf-8") as f:
+            json.dump(special_tokens_map, f, ensure_ascii=False, indent=2)
+        
+        # Save tokenizer configuration
+        tokenizer_config_simple = {
+            "vocab_size": self.vocab_size,
+            "model_max_length": 2048,
+            "tokenizer_class": "SalesATokenizer",
+            "model_name": self.model_name,
+            "pad_token": self.pad_token,
+            "unk_token": self.unk_token,
+            "bos_token": self.bos_token,
+            "eos_token": self.eos_token,
+            "code_token": self.code_token,
+            "extra_tokens": EXTRA_TOKENS
+        }
+        
+        with open(save_directory / "tokenizer_config.json", "w", encoding="utf-8") as f:
+            json.dump(tokenizer_config_simple, f, ensure_ascii=False, indent=2)
+        
+        print(f"Vocabulary files saved to {save_directory}")
+        print(f"Files created: vocab.json, merges.txt, tokenizer.json, special_tokens_map.json, tokenizer_config.json")
+
+    def save_pretrained(self, save_directory: str):
+        """Save the tokenizer in Hugging Face format (alias for save_vocab_files)"""
+        self.save_vocab_files(save_directory)
+
+    @classmethod
+    def from_pretrained(cls, save_directory: str, **kwargs):
+        """Load tokenizer from saved files"""
+        save_directory = Path(save_directory)
+        
+        # Load vocab.json
+        with open(save_directory / "vocab.json", "r", encoding="utf-8") as f:
+            vocab_dict = json.load(f)
+        
+        # Load tokenizer config
+        with open(save_directory / "tokenizer_config.json", "r", encoding="utf-8") as f:
+            config = json.load(f)
+        
+        # Convert vocab dict to list format
+        vocab_list = [None] * len(vocab_dict)
+        for token, token_id in vocab_dict.items():
+            vocab_list[token_id] = token.encode('utf-8') if isinstance(token, str) else token
+        
+        # Create tokenizer instance
+        tokenizer = cls(
+            vocab_size=config.get("vocab_size", 32000),
+            vocab=vocab_list,
+            model_name=config.get("model_name", "gpt2"),
+            **kwargs
+        )
+        
+        return tokenizer 

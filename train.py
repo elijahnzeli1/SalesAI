@@ -6,6 +6,7 @@ import logging
 from typing import Dict, Optional
 from tqdm import tqdm
 import math
+from pathlib import Path
 
 from config import SalesAConfig
 from model.salesa_model import SalesAModel
@@ -279,6 +280,16 @@ class SalesATrainer:
             'best_val_loss': self.best_val_loss
         }, path)
         logger.info(f"Model saved to {path}")
+        
+        # Also save vocabulary files alongside the checkpoint
+        checkpoint_dir = Path(path).parent
+        vocab_dir = checkpoint_dir / "vocab"
+        vocab_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Get tokenizer from the model if available
+        if hasattr(self.model, 'tokenizer'):
+            self.model.tokenizer.save_vocab_files(str(vocab_dir))
+            logger.info(f"Vocabulary files saved to {vocab_dir}")
 
     def load_model(self, path: str):
         """Load model checkpoint with enhanced metadata"""

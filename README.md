@@ -556,3 +556,36 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   <p><strong>Built with ❤️ for advancing AGI research</strong></p>
   <p><em>SalesAI - Empowering the future of artificial intelligence</em></p>
 </div>
+
+```text
+SalesAI/
+├── best_model.pt                    # Best model checkpoint
+├── checkpoint_epoch_5.pt           # Training checkpoints
+├── checkpoint_epoch_10.pt
+├── SalesA/                         # Final export directory
+│   ├── model.safetensors          # Model weights
+│   ├── model.safetensors.index.json
+│   ├── config.json                # HF config
+│   ├── vocab.json                 # ✅ NEW: Token vocabulary
+│   ├── merges.txt                 # ✅ NEW: BPE merge rules
+│   ├── tokenizer.json             # ✅ NEW: Complete tokenizer config
+│   ├── special_tokens_map.json    # ✅ NEW: Special tokens mapping
+│   ├── tokenizer_config.json      # ✅ NEW: Tokenizer configuration
+│   ├── tokenizer_config_legacy.json # Legacy format for compatibility
+│   ├── generation_config.json     # Generation params
+│   ├── processor_config.json      # Processor config
+│   ├── preprocessor_config.json   # Preprocessor config
+│   ├── README.md                  # Model card
+│   ├── chat_template.jinja        # Chat template
+│   └── .gitattributes            # Git LFS config
+├── SalesA/vocab/                  # ✅ NEW: Initial vocabulary files
+│   ├── vocab.json
+│   ├── merges.txt
+│   ├── tokenizer.json
+│   ├── special_tokens_map.json
+│   └── tokenizer_config.json
+├── logs/
+│   └── train.log                  # Training logs
+└── checkpoints/                   # Checkpoints with vocab files
+    └── vocab/                     # ✅ NEW: Vocabulary files per checkpoint
+```    
