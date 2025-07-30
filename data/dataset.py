@@ -158,6 +158,7 @@ class MultimodalDataset(Dataset):
         self.use_streaming = use_streaming
         self.cache_size = cache_size
         self.streaming_datasets = []
+        self.processed_samples = []  # Add the missing attribute
         
         # Initialize audio processor if available
         if AUDIO_PROCESSOR_AVAILABLE:

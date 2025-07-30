@@ -12,4 +12,6 @@ datasets/
 
 test_audio_processing.py
 
+test_dataset_fix.py
+
 training_logs.md
