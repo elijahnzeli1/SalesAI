@@ -152,19 +152,18 @@ class MultimodalDataset(Dataset):
         """Initialize streaming datasets without downloading"""
         # Define available datasets with their configurations
         dataset_configs = {
-            # Tri‑modal: image + audio + text
-            "minds14": {
-                "name": "PolyAI/minds14",
-                "config": "en-US",  # Specify language for audio data
+            # Tri‑modal: audio + text (no image)
+            "AnimeVox": {
+                "name": "taresh18/AnimeVox",
+                "config": "default",  # Use the only available config
                 "has_image": False,
-                "has_text": True,  # It has transcriptions
+                "has_text": True,
                 "has_audio": True,
-                "image_key": "image",
                 "audio_key": "audio",
                 "text_key": "english_transcription",
                 "limit": 2000 if self.split == "train" else 500,
                 "max_samples": 1500,
-                "note": "Minds14 audio dataset with transcriptions"
+                "note": "AnimeVox audio dataset with transcriptions"
             },
             "open_platypus": {
                 "name": "garage-bAInd/Open-Platypus",
@@ -226,7 +225,7 @@ class MultimodalDataset(Dataset):
                 elif self.task_type == "vision":
                     selected_datasets = ["beans"]
                 elif self.task_type == "audio":
-                    selected_datasets = ["minds14"]
+                    selected_datasets = ["AnimeVox"]
                 elif self.task_type in ["financial", "stock"]:
                     selected_datasets = ["financial_phrasebank"]
                 elif self.task_type == "text":
@@ -267,8 +266,8 @@ class MultimodalDataset(Dataset):
         """Create a streaming dataset wrapper"""
         try:
             # Handle special split cases
-            if dataset_config['name'] == "PolyAI/minds14" and self.split == "validation":
-                logger.warning("Minds14 doesn't have validation split. Using test split instead.")
+            if dataset_config['name'] == "taresh18/AnimeVox" and self.split == "validation":
+                logger.warning("AnimeVox doesn't have validation split. Using test split instead.")
                 split_to_use = "test"
             elif dataset_config['name'] == "garage-bAInd/Open-Platypus" and self.split == "validation":
                  split_to_use = "train"
